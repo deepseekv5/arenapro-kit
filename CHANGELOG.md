@@ -1,5 +1,16 @@
 # 更新日志
 
+## 0.2.2 — 2026-09-26
+
+- 修解析器一个会误导 AI 的盲点：**标量全局没被收进索引**。
+  `declare const world: GameWorld;` / `declare const storage: GameStorage;` 就是引擎入口本身，
+  之前只收 `type` / `function`，结果 `api world` 查不到——AI 查不到就会自己编一个。
+- 新增 `examples/scoreboard/`：一份能直接用的服务端脚本（加入/离开广播、`!pos` 坐标、
+  `!加/!me/!top/!reset` 计分板，存储走 `increment` 原子自增）。
+- 新增 `test/example.test.mjs`：把示例里每个引擎成员再对一遍官方 d.ts，
+  并静态检查端归属（服务端脚本不许出现 `ui` / `input` / `screen` 等客户端独占全局）。
+  编出来的接口能过语法检查、能跑起来、运行时静默什么都不做，所以这条得是断言。
+
 ## 0.2.1 — 2026-09-26
 
 - 修 SSE 会话泄漏：只挂 `req` 的 `close` 不够，客户端 abort 时不一定触发，

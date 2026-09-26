@@ -325,10 +325,12 @@ export function parseDts(text, side) {
 
     if (st.depth === 0) {
       const m = DECL.exec(st.text);
-      if (m && (m[1] === "type" || m[1] === "function")) {
-        const t = register(st, m[1], m[2]);
-        t.sig = st.text.replace(/^export\s+/, "");
-      }
+      if (!m) continue;
+      /* 标量全局也要收：`declare const world: GameWorld` 和 `declare const storage: GameStorage`
+         就是引擎入口本身。之前只收 type/function，结果 AI 查 world 查不到，
+         只能凭印象编一个全局对象出来。 */
+      const t = register(st, m[1], m[2]);
+      t.sig = st.text.replace(/^export\s+/, "");
     }
   }
   return types;

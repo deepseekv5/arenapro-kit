@@ -116,7 +116,7 @@ footer a:hover{color:var(--yellow)}
 <body>
 <header>
   <div class="wrap bar">
-    <div class="mark"><i>arenapro</i>-kit <span class="ver">v0.2.1</span></div>
+    <div class="mark"><i>arenapro</i>-kit <span class="ver">v0.2.2</span></div>
     <nav>
       <a href="#boundary">边界</a>
       <a href="#start">开始</a>
@@ -145,7 +145,7 @@ footer a:hover{color:var(--yellow)}
         <div class="stat"><b>0</b><s>依赖包 · 不用 npm install</s></div>
         <div class="stat"><b>25316</b><s>默认端口，让开官方 25315</s></div>
         <div class="stat"><b>1018</b><s>官方 d.ts 成员可检索</s></div>
-        <div class="stat"><b>119</b><s>条断言</s></div>
+        <div class="stat"><b>129</b><s>条断言</s></div>
       </div>
     </div>
     <div>
@@ -374,8 +374,10 @@ parser: <span class="k">20 passed, 0 failed</span>     <span class="c"># d.ts �
 engine: <span class="k">24 passed, 0 failed</span>     <span class="c"># Creator 探测、只读白名单、confirm 闸门</span>
 <span class="p">$</span> node test/kit.test.mjs
 kit: <span class="k">50 passed, 0 failed</span>        <span class="c"># MCP 契约、透传优先级、脱敏、写边界</span>
+<span class="p">$</span> node test/example.test.mjs
+example: <span class="k">11 passed, 0 failed</span>     <span class="c"># 示例代码逐个成员对官方 d.ts</span>
 <span class="p">$</span> node test/site.mjs
-site: <span class="k">26 passed, 0 failed</span>       <span class="c"># 文档里的数字必须等于代码里的数字</span></pre>
+site: <span class="k">25 passed, 0 failed</span>       <span class="c"># 文档里的数字必须等于代码里的数字</span></pre>
     <p>
       测试里<b>自己实现了一个最小 MCP 客户端</b>（开 SSE、按 JSON-RPC 走
       <code class="inline">initialize → tools/list → tools/call</code>），不 import 被测的 bridge——

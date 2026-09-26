@@ -80,3 +80,15 @@ declare class GameQuaternion {
 
 declare type GameLoggerMethod = (...args: any[]) => void;
 declare function sleep(ms: number): Promise<void>;
+
+/**
+ * @zh
+ * 本地图的世界入口。
+ */
+declare const world: GameWorld;
+
+/**
+ * @zh
+ * 数据存储空间入口。
+ */
+declare const storage: GameStorage;

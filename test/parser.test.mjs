@@ -21,7 +21,7 @@ const ok = (name, cond, extra = "") => {
 
 /** 独立口径：整字符扫描，跳过注释与字符串，深度 1 的分号即语句边界。 */
 function oracle(src, name) {
-  const re = new RegExp("declare (?:class|interface|const) " + name + "\\b[^{]*\\{");
+  const re = new RegExp("declare (?:class|interface|const) " + name + "\\b[^{;]*\\{");
   const m = re.exec(src);
   if (!m) return null;
   let i = m.index + m[0].length - 1;
@@ -85,6 +85,8 @@ ok("类级说明取到", g.GameQuaternion.zh.includes("x, y, z, w"), g.GameQuate
 
 /* --- 真实规模：官方 GameAPI 有 100+ 个顶层类型，夹具至少不能解析成 0 --- */
 const total = (o) => Object.values(o).reduce((n, t) => n + Object.keys(t.members).length, 0);
+ok("标量全局被收进索引（declare const world: GameWorld）", !!g.world && g.world.kind === "const" && g.world.side === "server", JSON.stringify(Object.keys(g).slice(0, 12)));
+ok("标量全局带中文说明", g.world?.zh === "本地图的世界入口。", g.world && g.world.zh);
 ok("夹具规模合理", Object.keys(g).length >= 5 && total(g) >= 12, `${Object.keys(g).length} 类 / ${total(g)} 成员`);
 
 /*

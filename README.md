@@ -121,9 +121,11 @@ node skill/arenapro/scripts/arenapro.mjs help
 ## 验证
 
 ```bash
-node test/parser.test.mjs     # 21 条：d.ts 解析器 vs 独立实现
-node test/kit.test.mjs        # 48 条：MCP 契约、透传优先级、脱敏、写边界
-node test/site.mjs            # 14 条：文档里的数字必须等于代码里的数字
+node test/parser.test.mjs     # 22 条：d.ts 解析器 vs 独立实现
+node test/engine.test.mjs     # 24 条：Creator 探测、apc 只读白名单、confirm 闸门
+node test/kit.test.mjs        # 50 条：MCP 契约、透传优先级、脱敏、写边界
+node test/example.test.mjs    # 8~11 条：示例代码逐个成员对官方 d.ts（带 ARENA_PROJECT 时更多）
+node test/site.mjs            # 25 条：文档里的数字必须等于代码里的数字
 ```
 
 `kit.test.mjs` 里**自己实现了一个最小 MCP 客户端**（开 SSE、按 JSON-RPC 走
