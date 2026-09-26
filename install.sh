@@ -27,9 +27,19 @@ TARGET_DIR="$DEST/.qoder/skills"
 TARGET="$TARGET_DIR/dao3-editor"
 mkdir -p "$TARGET_DIR"
 
+if [ -L "$TARGET" ] && [ "$(readlink "$TARGET")" = "$SRC" ]; then
+  echo "已安装，指向一致：$TARGET -> $SRC"
+  exit 0
+fi
+
 if [ -e "$TARGET" ] || [ -L "$TARGET" ]; then
   echo "已存在：$TARGET"
-  echo "不覆盖。确认要重装就先删掉它（软链用 rm，副本用 rm -rf）。"
+  if [ -L "$TARGET" ]; then
+    echo "它现在指向 $(readlink "$TARGET")，不是本仓库。"
+    echo "确认要换成本仓库就执行：ln -sfn '$SRC' '$TARGET'"
+  else
+    echo "那是一份实体副本，不覆盖。确认要重装就先 rm -rf "$TARGET"。"
+  fi
   exit 1
 fi
 
