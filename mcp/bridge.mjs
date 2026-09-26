@@ -12,6 +12,9 @@
  * 零第三方依赖。
  */
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+
+const KIT_VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 
 const DEFAULT_TIMEOUT_MS = 15000;
 
@@ -165,7 +168,7 @@ export class SseMcpClient {
     const init = await this.rpc("initialize", {
       protocolVersion: "2024-11-05",
       capabilities: {},
-      clientInfo: { name: "arenapro-kit", version: "0.1.0" },
+      clientInfo: { name: "arenapro-kit", version: KIT_VERSION },
     });
     if (init.error) throw new Error(`initialize 被拒：${init.error.message}`);
     this.serverInfo = init.result?.serverInfo || null;

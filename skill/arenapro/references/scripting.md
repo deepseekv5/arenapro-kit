@@ -1,7 +1,7 @@
 # 官方脚本规范
 
 **唯一的真相来源是工程自带的 `server/types/GameAPI.d.ts` 与 `client/types/ClientAPI.d.ts`。**
-它们由 `apc resource -s api` 从官方拉进来，跟着工程版本走。
+它们由 `apc map resource --type dts` 从官方拉进来，跟着工程版本走。
 本包的 `api_search` / `api_class` 就是直接读这两个文件，所以查得到的签名一定是对的，
 查不到的**就是官方没有**——不要凭印象编一个看起来合理的名字。
 

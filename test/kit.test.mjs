@@ -165,11 +165,13 @@ try {
 
   /* --- 5. env 脱敏 --- */
   const env = cli.text(await cli.call("env_show", { root: FIXTURE }));
-  ok("env 显示地图 ID", /100005475/.test(env));
-  ok("env 不泄露 AUTH 值", !/supersecret/.test(env), env.slice(0, 200));
-  ok("env 说明凭据只报有无", /已配置（值不显示）/.test(env));
+  ok("env 显示永久地图 ID 与 Profile", /map-fixture123/.test(env) && /local/.test(env), env.slice(0, 240));
+  ok("旧版 0.5.x 键也认", /100005475/.test(env));
+  ok("env 不泄露任何凭据值", !/supersecret/.test(env), env.slice(0, 240));
+  ok("违规写进 .env 的凭据被点名（只报键名）", /credentialsFound[\s\S]*VITE_DAO3_AUTH/.test(env) && /BOX_CREATOR_TOKEN/.test(env), env.slice(0, 300));
   const envDev = cli.text(await cli.call("env_show", { root: FIXTURE, mode: "dev" }));
-  ok("--env dev 读的是 .env.dev", /100005476/.test(envDev) && !/100005475/.test(envDev), envDev);
+  ok("--env dev 读的是 .env.dev 且不回退", /map-devonly456/.test(envDev) && !/map-fixture123/.test(envDev), envDev);
+  ok("dev 档同样不泄露凭据", !/supersecret|dev-secret/.test(envDev));
 
   /* --- 6. API 规范检索（解析器的回归点） --- */
   const s = JSON.parse(cli.text(await cli.call("api_search", { root: FIXTURE, query: "广播" })));
@@ -213,11 +215,11 @@ try {
   ok("dts_check 指出缺 UiIndex", dts.missing.includes("client/UiIndex/index.ts"), JSON.stringify(dts.missing));
   ok("缺的东西给的是 apc 命令", dts.rows.every((x) => !x.exists || /^apc /.test(x.fix)));
   const plan = cli.text(await cli.call("apc_plan", { intent: "upload" }));
-  ok("upload 计划是 apc upload 且没执行", /apc upload/.test(plan) && !kit.log().includes("exec"), plan);
+  ok("upload 计划是 apc script upload 且没执行", /apc script upload/.test(plan) && !kit.log().includes("exec"), plan);
   const bad = await cli.call("apc_plan", { intent: "rmrf" });
   ok("未知意图被拒", bad.isError === true);
   const noProject = await cli.call("project_info", { root: "/tmp" });
-  ok("非工程目录给出建工程指引", noProject.isError === true && /apc create/.test(cli.text(noProject)), cli.text(noProject));
+  ok("非工程目录给出建工程指引", noProject.isError === true && /apc project create/.test(cli.text(noProject)), cli.text(noProject));
 
   const disc = await (await fetch(`http://127.0.0.1:${kit.port}/api/mcp/tools`)).json();
   ok("发现端点报出插件在线", disc.plugin.online === true && disc.plugin.tools.includes("file_upLoad"), JSON.stringify(disc.plugin).slice(0, 200));

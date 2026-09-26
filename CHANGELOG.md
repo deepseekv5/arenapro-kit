@@ -1,5 +1,17 @@
 # 更新日志
 
+## 0.1.1 — 2026-09-26
+
+- **对齐 `apc` 0.7.0 的契约。** 之前那份命令表是从本地 `vendor/ArenaPro-CLI` 的 **0.5.4** 副本读的，
+  而上游早已改成分组命令：`profile / project / map / script / storage / runtime / scene / package / docs`。
+  env 键也从 `VITE_DAO3_MAP_ID` 换成 `VITE_BOX_CREATOR_PROFILE` + `VITE_BOX_CREATOR_PROJECT_ID`，
+  CLI Token 明确**不再进 `.env`**。
+- `env_show` 同时报新键与旧键，并把"违规写进 .env 的凭据键名"点名出来（值一律不显示）。
+- `apc_plan` 的意图表重写为 0.7.0 分组式；`dts_check` 的修复命令改成 `apc map resource --type dts`。
+- Skill 增加版本漂移护栏：给命令前先确认 `apc --version`。
+- 新增语法护栏：`test/site.mjs` 对仓库每个 `.mjs` 跑 `node --check`——批量替换文档字符串时
+  把引号套进引号里，服务直接起不来，这类错误不该等运行时才发现。
+
 ## 0.1.0 — 2026-09-26
 
 **目标改向：从"驱动 dao3 编辑器复刻"变成"把 AI 接进官方 ArenaPro"。**

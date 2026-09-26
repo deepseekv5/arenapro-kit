@@ -5,7 +5,7 @@
  * GameAPI.d.ts / ClientAPI.d.ts 当 API 规范源。
  *
  * 为什么解析 d.ts 而不是自带一份规范：
- * d.ts 是 `apc resource` 从官方拉进工程里的，**跟着工程版本走**。
+ * d.ts 是 `apc map resource --type dts` 从官方拉进工程里的，**跟着工程版本走**。
  * 自带一份等于把规范冻结在某个时间点，AI 会拿旧签名写新工程。
  */
 import { readFileSync, writeFileSync, existsSync, statSync, readdirSync } from "node:fs";
@@ -105,7 +105,7 @@ export function listScripts(root) {
         if (e.isDirectory()) { walk(full, depth + 1); continue; }
         if (!/\.(ts|tsx|js|cjs|mjs)$/.test(e.name)) continue;
         const r = rel(root, full);
-        // types/ 下是 apc resource 拉进来的官方声明，和"我写的脚本"是两回事，混在一起会误导
+        // types/ 下是 apc map resource 拉进来的官方声明，和"我写的脚本"是两回事，混在一起会误导
         (/(^|\/)types\//.test(r) || r.endsWith(".d.ts") ? found.types : found.src).push(r);
       }
     };
@@ -416,7 +416,7 @@ export function projectInfo(start = process.cwd()) {
   if (!found) {
     return {
       isProject: false, cwd: resolve(start),
-      hint: "这里不是 ArenaPro 工程。新建一个：apc create my-project（需要 @box3lab/arenapro-cli）。",
+      hint: "这里不是 ArenaPro 工程。新建一个：apc project create my-project（需要 @box3lab/arenapro-cli）。",
     };
   }
   const { root, configFile } = found;

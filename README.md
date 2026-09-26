@@ -59,7 +59,7 @@ IDE 侧加一个 server（**默认端口 25316，故意让开官方的 25315**�
 | 来源 | 传输 | 面 | 本包怎么处理 |
 |---|---|---|---|
 | **ArenaPro 插件**（VS Code 扩展） | SSE `localhost:25315/ap-mcp` | 24 个工具：账号、构建上传、地图、知识库 | **透传**，插件提供的名字以插件为准 |
-| `@box3lab/engine-openapi-mcp` | stdio | 6 tool + 5 prompt，写脚本与存储 | 出网 → 明确拒绝并指向 `apc upload` |
+| `@box3lab/engine-openapi-mcp` | stdio | 6 tool + 5 prompt，写脚本与存储 | 出网 → 明确拒绝并指向 `apc script upload` |
 | `@box3lab/statistics-mcp` | stdio | 19 个只读 GET，用户/地图/统计 | 出网 → 明确拒绝 |
 
 官方插件那 24 个工具的**参数 schema 没有公开**，所以本包不猜形状、只做转发——
@@ -80,7 +80,7 @@ IDE 侧加一个 server（**默认端口 25316，故意让开官方的 25315**�
 
 ## API 规范读的是工程自带的 d.ts
 
-**不自带一份规范副本。** 官方类型声明由 `apc resource -s api` 拉进工程，跟着工程版本走；
+**不自带一份规范副本。** 官方类型声明由 `apc map resource --type dts` 拉进工程，跟着工程版本走；
 自带一份等于把规范冻结在某个时间点，AI 会拿旧签名写新工程。
 
 - 官方 `GameAPI.d.ts` 有 **24585 行、134 个顶层类型、880 个成员**，`ClientAPI.d.ts` 另有 48 / 145。

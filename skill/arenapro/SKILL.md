@@ -22,7 +22,7 @@ description: 在官方 ArenaPro（dao3.fun / 神奇代码岛的桌面创作端�
 
 ```bash
 node scripts/arenapro.mjs info          # 这是不是 ArenaPro 工程？bundle、env、d.ts、脚本数
-node scripts/arenapro.mjs dts           # 官方类型声明齐不齐？缺就给 apc resource 命令
+node scripts/arenapro.mjs dts           # 官方类型声明齐不齐？缺就给 apc map resource 命令
 node scripts/arenapro.mjs api <关键词>   # 写任何 API 调用前先查一次
 ```
 
@@ -32,7 +32,7 @@ node scripts/arenapro.mjs api <关键词>   # 写任何 API 调用前先查一�
 
 | 想做的事 | 用 | 说明 |
 |---|---|---|
-| 看工程全貌 | `project_info` | 第一步。不是工程会明确告诉你并给出 `apc create` |
+| 看工程全貌 | `project_info` | 第一步。不是工程会明确告诉你并给出 `apc project create` |
 | 读/改脚本 | `script_read` / `script_write` | 路径钉死在工程根内；整份覆盖，不是补丁 |
 | 查接口 | `api_search` / `api_class` | 读工程**自带**的 `GameAPI.d.ts` / `ClientAPI.d.ts` |
 | 类型声明缺不缺 | `dts_check` | 缺什么给什么 `apc` 命令 |
@@ -71,10 +71,10 @@ node scripts/arenapro.mjs api <关键词>   # 写任何 API 调用前先查一�
 ## 工程与命令的对应关系
 
 `client/src` 与 `server/src` 是两端入口，产物在 `dist/{client,server}/<bundle>.<side>.js`。
-改完脚本要生效到线上地图，链条是：
+改完脚本要生效到地图，链条是：
 
 ```
-npm run build   →   apc upload        （或配 vite-plugin-arenapro-script 构建后自动传）
+npm run build   →   apc script upload …  （或 VITE_UPDATE_FILE=true 让构建后自动传）
 ```
 
 本包能替你做完的止于**改文件**。构建与上传要出网，交回人跑。
@@ -90,7 +90,10 @@ npm run build   →   apc upload        （或配 vite-plugin-arenapro-script �
 - **不碰凭据。** 不读 `auth.json`，不打印 `VITE_DAO3_AUTH` / `_UA` 的值。
 - **不越界写文件。** 绝对路径、`..`、非源码类型一律拒；目标在你读过之后被改过就先问，
   别盖掉 IDE 的自动格式化结果。
-- **不假设脚手架版本。** 官方明说"不同版本的脚手架目录可能略有差异"——以 `info` 读到的实际结构为准。
+- **不假设脚手架版本，也不假设 CLI 版本。** 官方明说"不同版本的脚手架目录可能略有差异"，
+  以 `info` 读到的实际结构为准。CLI 0.5.x 与 0.7.0 的命令面和 env 键名**完全不同**
+  （`apc upload` / `VITE_DAO3_MAP_ID` → `apc script upload` / `VITE_BOX_CREATOR_PROJECT_ID`）。
+  给命令前先让人跑 `apc --version` 与 `apc docs`。
 
 ## CLI
 

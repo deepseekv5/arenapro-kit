@@ -1,6 +1,6 @@
 // 介绍页与 README 的自检：结构完整 + 文档里的数字必须等于代码里的数字。
 // 网络检查是 opt-in 的（默认离线也要能跑）：NET=1 node test/site.mjs
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { TOOLS, REFUSED } from "../mcp/tools.mjs";
@@ -58,6 +58,29 @@ ok("页面不含本机用户目录", !/\/Users\/[a-z]/i.test(html + readme), "�
 ok("页面不引外部脚本", !/<script\b/i.test(html));
 ok("样式内联，无外部 css", !/<link[^>]+stylesheet/i.test(html));
 ok("不引用任何 emoji（用户明确要求）", !/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(html), "有表情符号");
+
+/* 每个 .mjs 都得过语法检查。批量替换文档字符串时把引号套进引号里，
+   服务根本起不来——而只看 diff 很容易漏。这个检查今晚真抓到一次。 */
+const { execFileSync } = await import("node:child_process");
+const walk = (d, acc = []) => {
+  for (const e of readdirSync(resolve(ROOT, d), { withFileTypes: true })) {
+    const p = `${d}/${e.name}`;
+    if (e.isDirectory()) walk(p, acc);
+    else if (e.name.endsWith(".mjs")) acc.push(p);
+  }
+  return acc;
+};
+const files = [...walk("mcp"), ...walk("skill/arenapro/scripts"), ...walk("test")];
+const badSyntax = [];
+for (const f of files) {
+  try { execFileSync(process.execPath, ["--check", resolve(ROOT, f)], { stdio: "pipe" }); }
+  catch { badSyntax.push(f); }
+}
+ok(`全部 ${files.length} 个 .mjs 语法通过`, badSyntax.length === 0, "语法错误: " + badSyntax.join(", "));
+
+const pkgVersion = JSON.parse(readFileSync(resolve(ROOT, "package.json"), "utf8")).version;
+ok(`介绍页的版本号就是 package.json 的 ${pkgVersion}`, html.includes(`v${pkgVersion}`), "页面版本对不上 package.json");
+ok("代码里没有第二处写死的版本号", !/version:\s*"\d+\.\d+/.test(readFileSync(resolve(ROOT, "mcp/server.mjs"), "utf8") + readFileSync(resolve(ROOT, "mcp/bridge.mjs"), "utf8")));
 
 if (process.env.NET === "1") {
   const urls = [...new Set([...html.matchAll(/href="(https?:\/\/[^"]+)"/g)].map((m) => m[1]))]

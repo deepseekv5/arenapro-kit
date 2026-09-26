@@ -22,7 +22,7 @@ const rootOf = (ctx, argRoot) => {
   if (!found) {
     throw new Error(
       "这里不是 ArenaPro 工程（要同时有 dao3.config.* 与 client/ server/）。" +
-      "新建一个：apc create my-project；已有工程请把本服务的工作目录指到工程根，或调用时带 root。"
+      "新建一个：apc project create my-project；已有工程请把本服务的工作目录指到工程根，或调用时带 root。"
     );
   }
   return found.root;
@@ -96,7 +96,7 @@ export const TOOLS = {
     async run(ctx, a) {
       const root = rootOf(ctx, a.root);
       const r = writeProjectFile(root, a.path, a.content, { ifUnchangedSince: a.ifUnchangedSince, force: a.force });
-      return `已${r.created ? "创建" : "覆盖"} ${r.path}（${r.bytes}B）。构建并上传要你自己跑：apc upload`;
+      return `已${r.created ? "创建" : "覆盖"} ${r.path}（${r.bytes}B）。构建与上传要你自己跑：npm run build 后 apc script upload`;
     },
   },
 
@@ -112,7 +112,7 @@ export const TOOLS = {
       const root = rootOf(ctx, a.root);
       const r = apiSearch(root, a.query, Number(a.limit) || 12);
       if (r.missing.length) {
-        r.note = `缺少类型声明：${r.missing.join(", ")}。先跑 apc resource -s api 从官方拉进工程。`;
+        r.note = `缺少类型声明：${r.missing.join(", ")}。先跑 apc map resource --type dts（这一步不需要 Token）。`;
       }
       return j(r);
     },
@@ -135,10 +135,10 @@ export const TOOLS = {
     async run(ctx, a) {
       const root = rootOf(ctx, a.root);
       const want = [
-        ["server/types/GameAPI.d.ts", "apc resource -s api"],
-        ["client/types/ClientAPI.d.ts", "apc resource -s api"],
-        ["shares/types/GameAssets.d.ts", "apc resource -s assets"],
-        ["client/UiIndex/index.ts", "apc resource"],
+        ["server/types/GameAPI.d.ts", "apc map resource --type dts"],
+        ["client/types/ClientAPI.d.ts", "apc map resource --type dts"],
+        ["shares/types/GameAssets.d.ts", "apc map resource --type assets"],
+        ["client/UiIndex/index.ts", "apc map resource --type assets"],
       ];
       const rows = want.map(([p, cmd]) => ({ path: p, exists: existsSync(join(root, p)), fix: cmd }));
       const idx = apiIndex(root);
@@ -147,7 +147,7 @@ export const TOOLS = {
   },
 
   env_show: {
-    desc: "看当前工程绑定的地图与配置。凭据类键（VITE_DAO3_AUTH / _UA）只报有没有，值不会出现。",
+    desc: "看当前工程绑定的 Creator Profile、永久地图 ID 与构建开关。Token 按官方约定不在 .env 里；任何匹配凭据的键只报有无。",
     needs: [],
     props: {
       mode: { type: "string", desc: "env 后缀，如 dev → .env.dev；默认 .env" },
@@ -156,39 +156,55 @@ export const TOOLS = {
     async run(ctx, a) {
       const root = rootOf(ctx, a.root);
       const e = readEnv(root, a.mode);
-      const mapKeys = ["VITE_DAO3_MAP_ID", "VITE_DAO3_MAP_NAME", "VITE_DAO3_PLAY_HASH", "VITE_DAO3_EDIT_HASH"];
+      const cur = ["VITE_BOX_CREATOR_PROFILE", "VITE_BOX_CREATOR_PROJECT_ID", "VITE_CURRENT_FILE", "VITE_UPDATE_FILE", "VITE_BOX_CREATOR_VERSION", "VITE_UI_INDEX_PREFIX"];
+      const legacy = ["VITE_DAO3_MAP_ID", "VITE_DAO3_MAP_NAME", "VITE_DAO3_PLAY_HASH", "VITE_DAO3_EDIT_HASH"];
+      const show = (k) => (e.keys[k] ? (e.keys[k].secret ? "（凭据，值不显示）" : e.keys[k].value) : null);
       return j({
         file: e.file, exists: e.exists,
-        map: Object.fromEntries(mapKeys.map((k) => [k, e.keys[k]?.value ?? null])),
-        credentials: {
-          VITE_DAO3_AUTH: e.keys.VITE_DAO3_AUTH?.present ? "已配置（值不显示）" : "未配置",
-          VITE_DAO3_UA: e.keys.VITE_DAO3_UA?.present ? "已配置（值不显示）" : "未配置",
+        binding: {
+          profile: show("VITE_BOX_CREATOR_PROFILE"),
+          permanentMapId: show("VITE_BOX_CREATOR_PROJECT_ID"),
         },
-        otherKeys: Object.keys(e.keys).filter((k) => !mapKeys.includes(k) && !["VITE_DAO3_AUTH", "VITE_DAO3_UA"].includes(k)),
+        build: {
+          currentFile: show("VITE_CURRENT_FILE"),
+          autoUpload: show("VITE_UPDATE_FILE"),
+          versionedUpload: show("VITE_BOX_CREATOR_VERSION"),
+          uiIndexPrefix: show("VITE_UI_INDEX_PREFIX"),
+        },
+        legacy05x: Object.fromEntries(legacy.map((k) => [k, show(k)])),
+        credentialsFound: Object.entries(e.keys).filter(([, v]) => v.secret && v.present).map(([k]) => k),
+        otherKeys: Object.keys(e.keys).filter((k) => !cur.includes(k) && !legacy.includes(k) && !e.keys[k].secret),
         files: envFiles(root),
-        hint: e.exists ? null : `没有 ${e.file}。绑定地图：apc set <地图ID或名称> --env ${a.mode || ""}`.trim(),
+        hint: !e.exists
+          ? `没有 ${e.file}。绑定地图：apc project bind <permanentMapId> --profile <名字>`
+          : (e.keys.VITE_BOX_CREATOR_PROJECT_ID?.present ? null : "缺 VITE_BOX_CREATOR_PROJECT_ID：跑 apc project bind <永久地图 ID>（不能用地图名或临时 hash）"),
       });
     },
   },
 
   apc_plan: {
-    desc: "把要做的事翻译成该跑的 apc 命令原文。本服务不代跑任何联网命令。",
+    desc: "把要做的事翻译成该跑的 apc 命令原文（0.7.0 分组式）。本服务不代跑任何连 Creator 或出网的命令。",
     needs: ["intent"],
-    props: { intent: { type: "string", desc: "login | bindMap | sync | build | upload | preview | create | info" } },
+    props: { intent: { type: "string", desc: "profile|bind|create|sync|build|upload|scriptGet|storage|runtime|logs|capture|info|docs" } },
     async run(ctx, a) {
       const map = {
-        login: ["apc login", "浏览器授权后写入全局配置；只想给当前工程用：apc login --env"],
-        bindMap: ["apc set <地图ID / playHash / 名称>", "把地图信息写进 .env（VITE_DAO3_MAP_ID / _PLAY_HASH / _EDIT_HASH / _MAP_NAME）"],
-        sync: ["apc resource", "同步资源与类型声明；只要 API：apc resource -s api；只要静态资源：-s assets"],
-        build: ["npm run build", "产物在 dist/server 与 dist/client，文件名形如 bundle.server.js"],
-        upload: ["apc upload", "两端依次上传；单端：apc upload server。只认 js/cjs/mjs 并统一改成 .js"],
-        preview: ["apc preview", "开创作页；游玩页：apc preview play"],
-        create: ["apc create <项目名>", "用官方脚手架建工程（会往目标目录复制，已存在时不提示）"],
-        info: ["apc info", "看登录态、当前地图配置、Node/npm/git 版本与 env 文件清单"],
+        profile: ["apc profile add local --endpoint 127.0.0.1:3127 --token \"$BOX_CREATOR_TOKEN\"", "把 CLI Token 存进本机 Profile 凭据；不要写进工程 .env"],
+        bind: ["apc project bind <permanentMapId> --profile local", "写 VITE_BOX_CREATOR_PROFILE / _PROJECT_ID。要永久地图 ID，不是地图名或临时 hash"],
+        create: ["apc project create my-map", "建 Creator Vite 工程，之后 npm install、profile add、project bind、map resource"],
+        sync: ["apc map resource --type all", "只要类型声明（不需要 Token）：apc map resource --type dts"],
+        build: ["npm run build", "产物在 dist/server 与 dist/client，文件名形如 <bundle>.server.js"],
+        upload: ["apc script upload <permanentMapId> server <entry>.js --file ./dist/server/<bundle>.server.js", "直接覆盖地图上的脚本，上限 20MiB 且不保留旧版；先 apc script get 备份"],
+        scriptget: ["apc script get", "列共享脚本；读某个：apc script get bootstrap.js --side server"],
+        storage: ["apc storage list <space> --page 0 --limit 50", "写：apc storage set <space> <key> --value '{…}'；删必须带 --yes"],
+        runtime: ["apc runtime status", "start / stop / restart 控制编辑器里这张地图的 Preview Run，不开浏览器、不发布游玩端"],
+        logs: ["apc runtime logs --follow --side server --level error", "断线自动重连；靠本地 dist/ 的 sourcemap 还原 TS 堆栈，调试期别清 dist/"],
+        capture: ["apc scene capture --out ./artifacts/view.png", "要求目标地图已在 Creator 编辑器里打开"],
+        info: ["apc project info --json", "查 Profile / 永久地图 ID / Token 是否配置 / Creator 健康 / Node 版本"],
+        docs: ["apc docs", "输出随包发布的完整 Markdown 文档；apc docs --file 只给路径"],
       };
       const want = String(a.intent).toLowerCase();
       const hit = map[want];
-      if (!hit) return { isError: true, text: `未知意图 ${a.intent}。可选：${Object.keys(map).join(" | ")}` };
+      if (!hit) return { isError: true, text: `未知意图 ${a.intent}。可选：${Object.keys(map).join(" | ")}\n注意 0.5.x 的 apc upload / apc login 在 0.7.0 已换成分组命令，先跑 apc --version 确认本机版本。` };
       return `${hit[0]}\n${hit[1]}`;
     },
   },
@@ -207,7 +223,7 @@ export const TOOLS = {
         distServer: s.dist.server, distClient: s.dist.client,
         stale: distM > 0 ? srcM > distM : "还没有构建产物",
         bundles: readBundles(root).bundles,
-        command: "npm run build && apc upload",
+        command: "npm run build && apc script upload <permanentMapId> <side> <entry> --file …",
       });
     },
   },
@@ -228,13 +244,13 @@ const STATS_REFUSED = "查神岛平台的统计与运营数据要出网，本包
  * 直接不列出来，客户端会以为契约对不上，然后开始猜接口。
  */
 export const REFUSED = {
-  userCenterTool_userTokenAndUA: "本包不读凭据、不碰官方账号接口。要拿 Token 请用官方 ArenaPro 插件，或自己跑 apc login（写入全局配置）。",
-  userCenterTool_userInfo: "本包不读凭据、不碰官方账号接口。账号信息请由官方 ArenaPro 插件提供，或在终端跑 apc info。",
-  userCenterTool_accountsLogin: "请自己跑 apc login。授权会在浏览器里打开 dao3.fun，本包不代跑联网命令。",
+  userCenterTool_userTokenAndUA: "本包不读凭据、不碰官方账号接口。要拿 Token 请用官方 ArenaPro 插件，或自己跑 apc profile add（Token 存本机 Profile 凭据，不进 .env）。",
+  userCenterTool_userInfo: "本包不读凭据、不碰官方账号接口。账号信息请由官方 ArenaPro 插件提供，或在终端跑 apc project info。",
+  userCenterTool_accountsLogin: "请自己跑 apc profile add --endpoint 127.0.0.1:3127 --token ‘$BOX_CREATOR_TOKEN’。本包不代跑联网命令。",
   userCenterTool_accountsLogout: "本包不管理登录态。",
-  "script.saveOrUpdate": "写脚本到神岛地图要出网，本包不做。构建后请跑 apc upload（或配 vite-plugin-arenapro-script 自动上传）。",
+  "script.saveOrUpdate": "写脚本到神岛地图要出网，本包不做。构建后请跑 apc script upload（或把 VITE_UPDATE_FILE=true 让构建自动上传）。",
   "script.rename": "需要官方接口。本包能改工程内文件名与内容，但改名后必须重新构建上传。",
-  "storage.get": "地图运行时存储要出网。本地开发请在地图脚本里用 GameWorld 的 storage API，或用 apc 相关命令。",
+  "storage.get": "地图运行时存储要出网。本地开发请在地图脚本里用官方 storage API，或自己跑 apc storage list|get|set。",
   "storage.set": "写线上存储要出网，本包不做。地图运行时的存储请在脚本里用官方 storage API；要离线跑就把数据写在工程内的 json 资产里。",
   "storage.remove": "删线上存储键要出网，本包不做。请挂官方 @box3lab/engine-openapi-mcp 或在脚本里处理。",
   "storage.page": "分页读线上存储要出网，本包不做。请挂官方 @box3lab/engine-openapi-mcp。",
@@ -261,17 +277,17 @@ export const REFUSED = {
   file_stopHMR: "HMR 由官方 ArenaPro 插件自己管；没连上插件时本包不会假装停掉了它。",
   file_debugger: "调试要 VS Code 的 launch 配置（.vscode/launch.json 已指向 dist/{server,client}/bundle.*.js）。本包不驱动 IDE。",
   file_openOutputLog: "本包不驱动 IDE 界面。",
-  file_openArena: "本包不驱动 IDE 界面。开创作页用 apc preview。",
+  file_openArena: "本包不驱动 IDE 界面。创作端就是本机 Creator（默认 127.0.0.1:3127）。",
   file_dao3config_open: "直接读工程里的 dao3.config.ts：本包的 script_read 就能看。",
   file_nodeJs_setting: "本包不改 IDE 设置。",
-  file_npm_package_get: "查 @dao3fun 组织的包请跑 apc npmlist（要出网，本包不代跑）。",
+  file_npm_package_get: "查 @dao3fun 组织的包请跑 apc package list（要出网，本包不代跑）。",
   file_npm_package_path: "本包不改 IDE 设置。",
-  file_buildNUpload: "构建+上传要出网。请自己跑：npm run build && apc upload",
-  file_upLoad: "上传脚本要出网。请自己跑 apc upload。",
-  file_createProject: "脚手架由官方 CLI 做：apc create <项目名>。本包不复制它的模板，避免两份模板各自漂移。",
-  map_showMap: "打开创作端要官方插件在跑（透传模式）；否则用 apc preview。",
+  file_buildNUpload: "构建+上传要出网。请自己跑：npm run build && apc script upload …",
+  file_upLoad: "上传脚本要出网。请自己跑 apc script upload <projectId> <side> <entry> --file …",
+  file_createProject: "脚手架由官方 CLI 做：apc project create <项目名>。本包不复制它的模板，避免两份模板各自漂移。",
+  map_showMap: "打开创作端要官方插件在跑（透传模式）。本包不启动 Creator，也不代你开地图。",
   map_playData: "游玩数据要出网。请挂官方 @box3lab/statistics-mcp。",
-  map_resource: "同步资源要出网。请自己跑 apc resource。",
+  map_resource: "同步资源要出网。请自己跑 apc map resource --type all。",
   chatjpt_onlyKnowledgeBase: "知识库检索在官方插件里（要登录）。本包的 api_search / api_class 直接查工程自带的 d.ts，离线可用。",
   component_showComponentStats: "组件统计要官方插件在跑（透传模式）。",
 };

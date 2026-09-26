@@ -1,6 +1,6 @@
 {
   "name": "arenapro-kit",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "把 AI 接进官方 ArenaPro：本地 MCP 端点（透传插件工具 + 工程层）与 arenapro Skill。只走本地，不碰官方远程接口。",
   "type": "module",
   "license": "Apache-2.0",

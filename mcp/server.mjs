@@ -15,6 +15,8 @@
  */
 import http from "node:http";
 import crypto from "node:crypto";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { TOOLS, REFUSED, toolDefs, callLocal } from "./tools.mjs";
 import { SseMcpClient } from "./bridge.mjs";
 
@@ -26,7 +28,8 @@ const PORT = Number(flag("port", process.env.PORT || 25316));
 const HOST = flag("host", process.env.HOST || "127.0.0.1");
 const PROJECT = flag("project", process.env.ARENA_PROJECT || process.cwd());
 const PLUGIN_URL = has("no-plugin") ? null : String(flag("plugin", process.env.ARENA_PLUGIN || "http://127.0.0.1:25315/ap-mcp"));
-const VERSION = "0.1.0";
+// 版本号只有一个来源：package.json。写死在两处早晚对不上（介绍页也读它）。
+const VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 const PROTOCOL_FALLBACK = "2024-11-05";
 
 if (PLUGIN_URL && !/:(25315)\b/.test(PLUGIN_URL) && PORT === 25315) {
