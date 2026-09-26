@@ -144,7 +144,7 @@ footer a:hover{color:var(--primary)}
         <div class="stat"><b>0</b><s>依赖包 · 零 npm install</s></div>
         <div class="stat"><b>11 + 13</b><s>可用工具 + 明说不支持</s></div>
         <div class="stat"><b>1044</b><s>官方 API 成员可检索</s></div>
-        <div class="stat"><b>26</b><s>MCP 契约断言</s></div>
+        <div class="stat"><b>26 + 20</b><s>MCP 契约断言 + 站点自检</s></div>
       </div>
     </div>
     <div class="term">
@@ -307,10 +307,19 @@ dao3.mjs api say                                      <span class="c"># 查官�
 <section id="test">
   <div class="wrap">
     <h2><span>06</span>验证</h2>
-<pre class="block"><span class="p">$</span> node test/mcp.test.mjs
-mcp-arenapro: <span class="k">26 passed, 0 failed</span></pre>
+<pre class="block"><span class="p">$</span> node test/site.mjs
+site: <span class="k">14 passed, 0 failed</span>        <span class="c"># 纯离线</span>
+<span class="p">$</span> NET=1 node test/site.mjs
+site: <span class="k">20 passed, 0 failed</span>        <span class="c"># 再联网查介绍页每个外链是否还活着</span>
+<span class="p">$</span> node test/mcp.test.mjs
+mcp-arenapro: <span class="k">26 passed, 0 failed</span>  <span class="c"># 需要编辑器在跑</span></pre>
     <p>
-      测试里<b>自己实现了一个最小 MCP 客户端</b>：开 SSE、按 JSON-RPC 走
+      <code class="inline">site.mjs</code> 存在的原因是本页与 README 里有写死的数字（11 / 13 / 24）。
+      这类数字漂移过一次教训：<b>加一个工具、忘了改文档，文档就开始说谎</b>。
+      所以它直接 import <code class="inline">mcp/tools.mjs</code> 拿真实键数来对，而不是再抄一遍常量。
+    </p>
+    <p>
+      MCP 那 26 条里<b>自己实现了一个最小 MCP 客户端</b>：开 SSE、按 JSON-RPC 走
       <code class="inline">initialize → tools/list → tools/call</code>。它不 import 被测模块——
       自己测自己等于自己给自己打分。
     </p>
@@ -331,7 +340,6 @@ mcp-arenapro: <span class="k">26 passed, 0 failed</span></pre>
       <a href="https://github.com/deepseekv5/dao3-editor-skill">接入层仓库</a>
       <a href="https://github.com/deepseekv5/dao3">编辑器复刻仓库</a>
       <a href="https://deepseekv5.github.io/dao3/">编辑器文档站</a>
-      <a href="https://deepseekv5.github.io/dao3/skill.html">编辑器侧的 AI 接入说明</a>
       <a href="https://github.com/deepseekv5/dao3-editor-skill/blob/main/CHANGELOG.md">更新日志</a>
     </div>
     <p>Apache-2.0 许可。本仓库只含接入层代码与文档，<b>不含</b>编辑器本体、官方素材、地图存档或 API 规范数据文件——

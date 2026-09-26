@@ -131,8 +131,15 @@ AI 最容易犯的错不是语法，是**编一个看起来合理的接口名**�
 ## 验证
 
 ```bash
-node test/mcp.test.mjs      # 26 条
+node test/site.mjs          # 14 条，纯离线
+NET=1 node test/site.mjs    # 20 条，再联网查介绍页每个外链是否还活着
+node test/mcp.test.mjs      # 26 条，需要编辑器在跑
 ```
+
+`site.mjs` 存在的原因是介绍页和 README 里有写死的数字（11 / 13 / 24）。
+这类数字漂移过一次教训：**加一个工具，忘了改文档，文档就开始说谎**。
+所以它直接 `import` `mcp/tools.mjs` 拿 `TOOLS` / `UNSUPPORTED` 的真实键数来对，
+而不是再抄一遍常量。
 
 测试里**自己实现了一个最小 MCP 客户端**：开 SSE、按 JSON-RPC 走
 `initialize → tools/list → tools/call`。它不 import 被测模块——自己测自己等于自己给自己打分。

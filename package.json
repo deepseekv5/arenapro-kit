@@ -7,7 +7,8 @@
   "bin": { "dao3": "skill/dao3-editor/scripts/dao3.mjs" },
   "scripts": {
     "mcp": "node mcp/server.mjs",
-    "test": "node test/mcp.test.mjs"
+    "test": "node test/site.mjs && node test/mcp.test.mjs",
+    "test:site": "NET=1 node test/site.mjs"
   },
   "engines": { "node": ">=18" },
   "dependencies": {}
