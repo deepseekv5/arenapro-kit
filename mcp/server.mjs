@@ -130,6 +130,24 @@ async function handleRpc(sid, msg) {
   }
 }
 
+/* 心跳兼回收。
+ * 只靠 req 的 "close" 事件不够：客户端 abort 之后服务端往往要等到下次写入
+ * 才发现连接已死，于是 sessions 里一直攒死会话。每 15 秒写一行 SSE 注释，
+ * 写不动就顺手删掉——顺带也防止反向代理掐掉空闲长连接。 */
+const HEARTBEAT_MS = 15000;
+const heartbeat = setInterval(() => {
+  for (const [sid, res] of sessions) {
+    // 光看 writableEnded/destroyed 不够：客户端 abort 之后写调用往往不报错，
+    // 数据被丢进已死 socket 的缓冲区。所以三件事一起做——
+    // 查 socket 状态、用 write 回调收错误、并给 res 挂 close 监听（见 SSE 分支）。
+    if (!writable(res) || res.socket?.destroyed) { sessions.delete(sid); continue; }
+    try { res.write(": ping\n\n", (err) => { if (err) sessions.delete(sid); }); }
+    catch { sessions.delete(sid); }
+  }
+}, HEARTBEAT_MS);
+heartbeat.unref?.();
+process.on("exit", () => clearInterval(heartbeat));
+
 const json = (res, code, obj) => {
   res.writeHead(code, { "Content-Type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(obj, null, 2));
@@ -155,7 +173,11 @@ async function handle(req, res) {
     res.write("retry: 3000\n\n");
     sessions.set(sid, res);
     sseRaw(res, "endpoint", `/ap-mcp/messages?sid=${sid}`);
-    req.on("close", () => sessions.delete(sid));
+    // req 的 close 在部分客户端 abort 时不会触发；res/socket 的 close 才会。
+    const drop = () => sessions.delete(sid);
+    req.on("close", drop);
+    res.on("close", drop);
+    res.socket?.on("error", drop);
     return;
   }
 
