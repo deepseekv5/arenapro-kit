@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>dao3-editor Skill + ArenaPro MCP — 让 AI 直接动手用 dao3 编辑器</title>
+<meta name="description" content="dao3 编辑器复刻的 AI 接入层：ArenaPro 兼容的 MCP 服务与 dao3-editor Skill，两者只走编辑器的 HTTP API。11 个工具可用、13 个明说不支持、官方 100 类 1044 成员的 API 规范随 skill 一起给。"/>
+<meta property="og:title" content="dao3-editor Skill + ArenaPro MCP"/>
+<meta property="og:description" content="被驱动的东西不该和被驱动的接口焊在一起。独立仓库，只走编辑器 HTTP API。"/>
+<meta property="og:type" content="website"/>
+<link rel="canonical" href="https://deepseekv5.github.io/dao3-editor-skill/"/>
+<style>
+:root{
+  --primary:#fc8308; --primary-hover:#fd9c39; --primary-dim:rgba(252,131,8,.13);
+  --bg0:#0c0c0d; --bg1:#121214; --bg2:#17171a; --bg3:#1e1e22; --bg4:#26262b;
+  --line:rgba(255,255,255,.075); --line2:rgba(255,255,255,.13);
+  --fg:#ededf0; --fg2:rgba(255,255,255,.66); --fg3:rgba(255,255,255,.4);
+  --ok:#48c774; --bad:#ef5a5a;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,"JetBrains Mono",Menlo,Consolas,monospace;
+  --font:Rubik,MiSans,Montserrat,"PingFang SC","noto-sans-sc","Microsoft YaHei",system-ui,sans-serif;
+  --maxw:1120px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:76px}
+body{
+  margin:0;background:var(--bg0);color:var(--fg);font-family:var(--font);font-size:15px;line-height:1.75;
+  -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(90% 55% at 50% -8%,rgba(252,131,8,.08),transparent 60%);
+  background-attachment:fixed;
+}
+a{color:inherit;text-decoration:none}
+code{font-family:var(--mono);overflow-wrap:anywhere;word-break:break-word}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 22px}
+
+header{position:sticky;top:0;z-index:20;background:rgba(12,12,13,.86);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+.bar{display:flex;align-items:center;gap:18px;height:58px}
+.mark{display:flex;align-items:baseline;gap:9px;font-weight:700;letter-spacing:.2px;white-space:nowrap}
+.mark b{color:var(--primary)}
+.mark s{text-decoration:none;color:var(--fg3);font-weight:400;font-size:12.5px}
+nav{display:flex;gap:4px;margin-left:auto;flex-wrap:wrap}
+nav a{padding:6px 11px;border-radius:8px;color:var(--fg2);font-size:13.5px}
+nav a:hover{background:var(--bg3);color:var(--fg)}
+
+.hero{padding:74px 0 30px;display:grid;grid-template-columns:1.05fr .95fr;gap:44px;align-items:center}
+h1{margin:0 0 14px;font-size:37px;line-height:1.24;letter-spacing:-.4px}
+h1 em{font-style:normal;color:var(--primary)}
+.lede{margin:0 0 22px;color:var(--fg2);font-size:16.5px;max-width:52ch}
+.cta{display:flex;gap:11px;flex-wrap:wrap;margin-bottom:16px}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:10px 17px;border-radius:10px;font-weight:600;font-size:14px;border:1px solid var(--line2);background:var(--bg3)}
+.btn:hover{border-color:var(--primary);color:var(--primary)}
+.btn.pri{background:var(--primary);border-color:var(--primary);color:#150c02}
+.btn.pri:hover{background:var(--primary-hover);color:#150c02}
+.stats{display:flex;gap:26px;flex-wrap:wrap;margin-top:26px;padding-top:22px;border-top:1px solid var(--line)}
+.stat b{display:block;font-size:25px;font-family:var(--mono);color:var(--primary);line-height:1.2}
+.stat s{text-decoration:none;color:var(--fg3);font-size:12.5px}
+
+.term{background:var(--bg1);border:1px solid var(--line2);border-radius:13px;overflow:hidden;box-shadow:0 22px 60px rgba(0,0,0,.5)}
+.term .top{display:flex;align-items:center;gap:7px;padding:11px 14px;background:var(--bg2);border-bottom:1px solid var(--line)}
+.term .top i{width:10px;height:10px;border-radius:50%;background:var(--bg4);display:block}
+.term .top i:first-child{background:#ef5a5a55}
+.term .top span{margin-left:6px;font-size:12px;color:var(--fg3);font-family:var(--mono)}
+.term pre{margin:0;padding:16px 18px;font-family:var(--mono);font-size:12.8px;line-height:1.72;overflow-x:auto;color:var(--fg2)}
+.term pre .p{color:var(--ok)}
+.term pre .k{color:var(--primary)}
+.term pre .c{color:var(--fg3)}
+pre.block .p{color:var(--ok)}
+pre.block .k{color:var(--primary)}
+pre.block .c{color:var(--fg3)}
+
+section{padding:52px 0;border-top:1px solid var(--line)}
+h2{margin:0 0 6px;font-size:24px;letter-spacing:-.2px}
+h2 span{color:var(--primary);font-family:var(--mono);font-size:14px;margin-right:11px}
+.sub{margin:0 0 26px;color:var(--fg3);font-size:14.5px;max-width:74ch}
+h3{margin:26px 0 8px;font-size:16px}
+p{margin:0 0 14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.card{background:var(--bg1);border:1px solid var(--line);border-radius:12px;padding:19px 20px}
+.card:hover{border-color:var(--line2)}
+.card h4{margin:0 0 6px;font-size:15.5px;display:flex;align-items:center;gap:9px}
+.card h4 code{background:var(--primary-dim);color:var(--primary);padding:2px 7px;border-radius:6px;font-size:13px}
+.card p{margin:0;color:var(--fg2);font-size:14px}
+pre.block{background:var(--bg1);border:1px solid var(--line);border-radius:11px;padding:14px 16px;overflow-x:auto;font-family:var(--mono);font-size:13px;line-height:1.7;color:var(--fg2);margin:0 0 16px}
+code.inline{background:var(--bg3);padding:1.5px 6px;border-radius:5px;font-size:13px}
+
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--fg3);font-weight:600;font-size:12.5px;text-transform:uppercase;letter-spacing:.6px}
+td code{font-size:12.8px}
+.chip{display:inline-block;padding:1px 8px;border-radius:20px;font-size:11.5px;font-weight:600;font-family:var(--mono)}
+.chip.ok{background:rgba(72,199,116,.14);color:var(--ok)}
+.chip.no{background:rgba(239,90,90,.14);color:var(--bad)}
+.chip.n{background:var(--bg4);color:var(--fg3)}
+
+ul.tick{list-style:none;padding:0;margin:0 0 16px}
+ul.tick li{position:relative;padding-left:26px;margin-bottom:11px;color:var(--fg2)}
+ul.tick li:before{content:"";position:absolute;left:6px;top:9px;width:6px;height:6px;border-radius:50%;background:var(--primary)}
+ul.tick li b{color:var(--fg)}
+
+.warn{background:var(--bg1);border:1px solid var(--line);border-left:2px solid var(--primary);border-radius:10px;padding:15px 18px;margin:0 0 14px}
+.warn h4{margin:0 0 4px;font-size:14.5px}
+.warn p{margin:0;color:var(--fg2);font-size:14px}
+
+.quote{border-left:2px solid var(--line2);padding:2px 0 2px 18px;margin:18px 0;color:var(--fg2);font-size:14.5px}
+footer{border-top:1px solid var(--line);padding:34px 0 52px;color:var(--fg3);font-size:13.5px}
+footer .links{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:12px}
+footer a:hover{color:var(--primary)}
+@media(max-width:900px){
+  .hero{grid-template-columns:1fr;padding-top:44px;gap:30px}
+  .grid2{grid-template-columns:1fr}
+  h1{font-size:29px}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap bar">
+    <div class="mark"><b>dao3</b>-editor<s>接入层</s></div>
+    <nav>
+      <a href="#why">为什么独立</a>
+      <a href="#start">三十秒接上</a>
+      <a href="#tools">工具矩阵</a>
+      <a href="#spec">API 规范</a>
+      <a href="#test">验证</a>
+      <a href="https://github.com/deepseekv5/dao3-editor-skill">源码</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="hero">
+    <div>
+      <h1>让 AI <em>直接动手</em>用编辑器<br/>而不是写一段代码等人贴进去</h1>
+      <p class="lede">
+        <code>dao3</code> 编辑器复刻的 AI 接入层。一个仓库两样东西：ArenaPro 兼容的 MCP 服务，
+        和带全量官方 API 规范的 <code>dao3-editor</code> Skill。底下同一套数据，
+        <b>都只走编辑器的 HTTP API</b>。
+      </p>
+      <div class="cta">
+        <a class="btn pri" href="https://github.com/deepseekv5/dao3-editor-skill">GitHub 仓库</a>
+        <a class="btn" href="https://github.com/deepseekv5/dao3-editor-skill#readme">README</a>
+        <a class="btn" href="https://deepseekv5.github.io/dao3/">编辑器本体文档站</a>
+      </div>
+      <div class="stats">
+        <div class="stat"><b>0</b><s>依赖包 · 零 npm install</s></div>
+        <div class="stat"><b>11 + 13</b><s>可用工具 + 明说不支持</s></div>
+        <div class="stat"><b>1044</b><s>官方 API 成员可检索</s></div>
+        <div class="stat"><b>26</b><s>MCP 契约断言</s></div>
+      </div>
+    </div>
+    <div class="term">
+      <div class="top"><i></i><i></i><i></i><span>node mcp/server.mjs</span></div>
+<pre><span class="p">$</span> node start.mjs --no-open --port=5180   <span class="c"># 编辑器先起着</span>
+<span class="p">$</span> node mcp/server.mjs
+<span class="k">ArenaPro 兼容 MCP 已启动</span>  http://127.0.0.1:25315/ap-mcp
+<span class="k">转发到编辑器</span>             http://127.0.0.1:5180
+<span class="k">编辑器在线</span>               dao3-editor-clone 2.1.0
+<span class="k">工具</span>                     11 个可用 · 13 个明说不支持
+
+<span class="c"># IDE 侧 .vscode/mcp.json —— 与官方插件同端口同路径，
+# 已经按官方文档配过的客户端一个字都不用改</span>
+{ "servers": { "ArenaPro-MCP":
+    { "type": "sse", "url": "http://localhost:25315/ap-mcp" } } }</pre>
+    </div>
+  </div>
+</div>
+
+<section id="why">
+  <div class="wrap">
+    <h2><span>01</span>为什么单独成一个仓库</h2>
+    <p class="sub">被驱动的东西不该和被驱动的接口焊在一起。</p>
+    <p>
+      这两样原先住在编辑器仓库内部：MCP 是 <code class="inline">server.js</code> 的一个路由，
+      靠注入进程内函数（<code class="inline">readWorld</code> / <code class="inline">writeWorld</code> /
+      <code class="inline">listWorlds</code>）干活；Skill 则躺在编辑器的 <code class="inline">.qoder/skills/</code> 下。
+      结果是：想把接入层给别人用，得先把整个编辑器——含官方素材、地图存档、Three.js——一起给出去。
+    </p>
+    <p>
+      拆开之后依赖方向变成单向的：<b>本仓库依赖编辑器的 HTTP 接口，编辑器不知道本仓库存在。</b>
+      所以编辑器换版本、换目录，甚至换成官方桌面版，这一层都不用改。
+    </p>
+    <div class="grid2">
+      <div class="card">
+        <h4><code>mcp/</code> ArenaPro 兼容 MCP 服务</h4>
+        <p>独立进程的 SSE 服务，纯 HTTP 代理：不 import 编辑器模块，也不读它的文件。给 IDE 里的 Agent 用。</p>
+      </div>
+      <div class="card">
+        <h4><code>skill/dao3-editor/</code> Qoder Skill + CLI</h4>
+        <p>零依赖命令行，建图 / 批量写体素 / 读写两端脚本 / 存盘 / 查规范。给终端里干活的人和 Agent 用。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="start">
+  <div class="wrap">
+    <h2><span>02</span>装 Skill</h2>
+    <p class="sub">默认软链：改这份仓库，所有装了它的工程立刻跟着变。这类「给 AI 的规范」最容易出的事故就是各处副本各自漂移。</p>
+<pre class="block"><span class="p">$</span> ./install.sh /path/to/your/project    <span class="c"># 软链进该工程的 .qoder/skills/</span>
+<span class="p">$</span> ./install.sh --copy                   <span class="c"># 要落盘副本时用（跨机器同步、要提交进那个工程）</span>
+<span class="p">$</span> node skill/dao3-editor/scripts/dao3.mjs health   <span class="c"># 验证</span></pre>
+    <h3>CLI 长什么样</h3>
+<pre class="block">dao3.mjs blocks --grep 草                              <span class="c"># 写体素前先查方块 id，别猜</span>
+dao3.mjs scaffold demo --shape 64,64,64 --floor 0     <span class="c"># 建一张 64³ 的空图</span>
+dao3.mjs fill demo --box 4,1,4,12,6,12 --id 30        <span class="c"># 一个长方体平台</span>
+dao3.mjs probe demo --at 8,8                          <span class="c"># 回读，确认真的落下去了</span>
+dao3.mjs api say                                      <span class="c"># 查官方 API 签名与中文说明</span></pre>
+    <p class="quote">
+      每条写操作后面都跟一条 <b>probe</b>。写体素是全量覆盖、没有补丁接口，
+      所以「我以为写进去了」和「它真的在里面」是两件事。
+    </p>
+  </div>
+</section>
+
+<section id="tools">
+  <div class="wrap">
+    <h2><span>03</span>工具矩阵：官方 24 个名字全部在册</h2>
+    <p class="sub">
+      端口 <code class="inline">25315</code>、路径 <code class="inline">/ap-mcp</code> 就是官方 ArenaPro 插件用的那一套。
+      机器可读版本：<code class="inline">curl -s http://127.0.0.1:25315/api/mcp/tools</code>
+    </p>
+    <table>
+      <thead><tr><th>状态</th><th>工具名</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="chip ok">可用 11</span></td>
+          <td><code>file_mapTool</code> <code>file_createProject</code> <code>map_showMap</code> <code>map_playData</code>
+              <code>map_resource</code> <code>file_upLoad</code> <code>file_buildNUpload</code> <code>file_checkDts</code>
+              <code>chatjpt_onlyKnowledgeBase</code> <code>component_showComponentStats</code> <code>file_outputName</code></td>
+          <td>建图、读写地图与脚本、资产上传、规范检索、组件统计</td>
+        </tr>
+        <tr>
+          <td><span class="chip no">不支持 13</span></td>
+          <td><code>userCenterTool_*</code> ×4、<code>file_npm_package_*</code>、<code>file_reHMR</code>、
+              <code>file_stopHMR</code>、<code>file_openArena</code>、<code>file_debugger</code>、
+              <code>file_openOutputLog</code>、<code>file_dao3config_open</code>、<code>file_nodeJs_setting</code></td>
+          <td>调用得到 <code>isError</code> + 明确原因，而不是 <code>unknown tool</code></td>
+        </tr>
+      </tbody>
+    </table>
+    <h3>两个值得说明的决定</h3>
+    <div class="warn">
+      <h4>账号类工具绝不假装成功</h4>
+      <p>
+        这里没有账号体系，<code class="inline">userCenterTool_*</code> 返回 <code class="inline">isError</code> 并写清原因，
+        <b>不会吐出一个假 token</b>。一个会返回假凭据的登录工具，比没有这个工具危险得多。
+        回归里专门有一条：拒绝文本中不得出现像 JWT 的串。
+      </p>
+    </div>
+    <div class="warn">
+      <h4>做不到的仍然留在 tools/list 里</h4>
+      <p>
+        客户端按官方清单调用时若拿到 <code class="inline">unknown tool</code>，Agent 会认为契约对不上而开始猜接口。
+        给一个明确的「不支持 + 为什么」更好。<br/>
+        顺带：<code class="inline">file_reHMR</code> / <code class="inline">file_stopHMR</code> 不支持其实是好消息——
+        编辑器<b>没有构建步骤</b>，改完刷新即可。
+      </p>
+    </div>
+  </div>
+</section>
+
+<section id="spec">
+  <div class="wrap">
+    <h2><span>04</span>官方 API 全量规范随 skill 一起给</h2>
+    <p class="sub">
+      AI 最容易犯的错不是语法，是<b>编一个看起来合理的接口名</b>。所以带了三份，而且规定：查不到就明说没有。
+    </p>
+    <table>
+      <thead><tr><th>文件</th><th>内容</th><th>为什么这么切</th></tr></thead>
+      <tbody>
+        <tr><td><code>references/api.md</code></td><td>100 个类的索引 + 端归属 + 成员数</td><td>目录，不整篇读</td></tr>
+        <tr><td><code>references/scripting.md</code></td><td>两端全局划分、单位制、四元数序、颜色量纲</td><td>写之前必读的硬规范</td></tr>
+        <tr><td><code>dao3.mjs api</code></td><td>1044 个成员按名字精确检索签名与官方中文说明</td><td>按需查，不进上下文</td></tr>
+      </tbody>
+    </table>
+    <p class="quote">完整文档有 1.7 万词，不该整篇进上下文——那是「目录 + 按需查」的分工。</p>
+    <p>
+      规范数据从编辑器的 <code class="inline">/data/api-spec.json</code> 取，和文档站、应用内 AI 的规范注入<b>同源</b>，
+      所以「AI 以为有的接口」和「实际实现的接口」不会各说一套。
+    </p>
+    <h3>三条会咬人的规范</h3>
+    <ul class="tick">
+      <li><b>单位是「格 / tick」</b>，<code class="inline">TICK_MS=64</code> → <b>15.625 tick/秒</b>（不是 20 TPS）。
+          <code class="inline">walkSpeed 0.22</code> ≈ 3.4 格/秒。当成格/秒，人物慢 15 倍。</li>
+      <li><b>四元数是 <code class="inline">xyzw</code>。</b> 实测官方 432 个实体朝向：276 个
+          <code class="inline">[0,0,0,1]</code>、<b>0 个</b> <code class="inline">[1,0,0,0]</code>。</li>
+      <li><b>两端全局不是一套。</b> 服务端独占 <code class="inline">storage</code> <code class="inline">voxels</code>
+          <code class="inline">resources</code> 与全部 <code class="inline">Game*</code>；客户端独占
+          <code class="inline">ui</code> <code class="inline">input</code> <code class="inline">screen</code> 与全部
+          <code class="inline">Ui*</code>。写错端不会立刻报错，是 <code class="inline">undefined</code>。</li>
+    </ul>
+  </div>
+</section>
+
+<section id="edge">
+  <div class="wrap">
+    <h2><span>05</span>边界</h2>
+    <div class="grid2">
+      <div class="card"><h4>不联网</h4><p>只做本地 HTTP。规范检索是查本地数据文件，不调模型。</p></div>
+      <div class="card"><h4>没有账号系统</h4><p>官方登录 / Token / 线上游玩统计拿不到，也不伪造。</p></div>
+      <div class="card"><h4>写体素是全量覆盖</h4><p>编辑器没有补丁接口。两个进程同时改同一张图会互相覆盖。</p></div>
+      <div class="card"><h4>自动存档会打架</h4><p>浏览器开着那张图时，编辑器的自动存档可能盖掉 CLI 的改动。先关标签页，或改完 <code>probe</code> 复查。</p></div>
+    </div>
+    <p class="sub" style="margin-top:16px">项目包 <code class="inline">.zip</code> 导出在编辑器浏览器侧（依赖 Three.js），CLI 里没有等价命令。</p>
+  </div>
+</section>
+
+<section id="test">
+  <div class="wrap">
+    <h2><span>06</span>验证</h2>
+<pre class="block"><span class="p">$</span> node test/mcp.test.mjs
+mcp-arenapro: <span class="k">26 passed, 0 failed</span></pre>
+    <p>
+      测试里<b>自己实现了一个最小 MCP 客户端</b>：开 SSE、按 JSON-RPC 走
+      <code class="inline">initialize → tools/list → tools/call</code>。它不 import 被测模块——
+      自己测自己等于自己给自己打分。
+    </p>
+    <p>覆盖：官方 24 个工具名全部在册、账号工具返回 <code class="inline">isError</code> 且不含 JWT 样串、
+       真建一张图再写脚本再删掉、<code class="inline">checkDts</code> 不被注释里的假引用骗到、
+       路径穿越被<b>明确拒绝</b>而不是清洗后照写还报成功。</p>
+    <div class="quote">
+      这条踩过一次：MCP 的 <code class="inline">endpoint</code> 帧按规格是纯文本 URL，实现时多包了一层 JSON 引号，
+      结果<b>任何真实 MCP 客户端都连不上，而本地测试全绿</b>——因为测试客户端跟着一起错。
+      自测自洽证明不了兼容。
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="links">
+      <a href="https://github.com/deepseekv5/dao3-editor-skill">接入层仓库</a>
+      <a href="https://github.com/deepseekv5/dao3">编辑器复刻仓库</a>
+      <a href="https://deepseekv5.github.io/dao3/">编辑器文档站</a>
+      <a href="https://deepseekv5.github.io/dao3/skill.html">编辑器侧的 AI 接入说明</a>
+      <a href="https://github.com/deepseekv5/dao3-editor-skill/blob/main/CHANGELOG.md">更新日志</a>
+    </div>
+    <p>Apache-2.0 许可。本仓库只含接入层代码与文档，<b>不含</b>编辑器本体、官方素材、地图存档或 API 规范数据文件——
+       规范在运行时从本地编辑器的 HTTP 接口读取。</p>
+    <p>dao3 / 神奇代码岛 及其美术与地图数据版权归 box3lab 所有。本项目为独立兼容实现，未复制或反编译官方源码。</p>
+  </div>
+</footer>
+</body>
+</html>

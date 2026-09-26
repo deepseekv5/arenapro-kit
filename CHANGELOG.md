@@ -1,5 +1,12 @@
 # 更新日志
 
+## 1.1.0 — 2026-09-26
+
+- 开源发布：仓库 [deepseekv5/dao3-editor-skill](https://github.com/deepseekv5/dao3-editor-skill)。
+- 新增独立介绍页 `docs/index.html`，由 GitHub Pages 提供：
+  <https://deepseekv5.github.io/dao3-editor-skill/>。
+  单文件、内联样式、无构建步骤——和仓库其余部分一样，克隆下来就能跑，不需要 `npm install`。
+
 ## 1.0.1 — 2026-09-26
 
 - `install.sh` 可以重复跑了：目标软链已经指向本仓库时直接报「指向一致」退出 0，

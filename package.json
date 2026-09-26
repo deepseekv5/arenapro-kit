@@ -1,6 +1,6 @@
 {
   "name": "dao3-editor-skill",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "dao3 编辑器（本地复刻）的 AI 接入层：ArenaPro 兼容的 MCP 服务 + dao3-editor Skill + 零依赖 CLI",
   "type": "module",
   "license": "Apache-2.0",

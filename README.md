@@ -1,5 +1,7 @@
 # dao3-editor Skill + ArenaPro MCP
 
+介绍页：**https://deepseekv5.github.io/dao3-editor-skill/**（源码在 `docs/index.html`，纯静态单文件，无构建步骤）
+
 让 AI 直接动手用 [dao3 编辑器复刻](https://github.com/deepseekv5/dao3)，
 而不是只能"写一段代码等人贴进去"。
 
