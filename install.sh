@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# 把 dao3-editor Skill 装进某个工程的 .qoder/skills/。
+#
+# 默认用**软链**：改这份仓库，所有装了它的工程立刻跟着变——
+# 这类"给 AI 的规范"最容易出现的就是各处副本各自漂移。
+# 要把副本真正落盘（比如要提交进那个工程、或跨机器同步），加 --copy。
+#
+#   ./install.sh                      # 软链到当前工程 .qoder/skills/
+#   ./install.sh /path/to/project     # 软链到指定工程
+#   ./install.sh --copy [目标]        # 复制而不是软链
+set -euo pipefail
+
+SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/skill/dao3-editor"
+MODE="link"
+DEST=""
+for a in "$@"; do
+  case "$a" in
+    --copy) MODE="copy" ;;
+    --link) MODE="link" ;;
+    -h|--help) sed -n '2,10p' "$0"; exit 0 ;;
+    *) DEST="$a" ;;
+  esac
+done
+[ -n "$DEST" ] || DEST="$PWD"
+
+TARGET_DIR="$DEST/.qoder/skills"
+TARGET="$TARGET_DIR/dao3-editor"
+mkdir -p "$TARGET_DIR"
+
+if [ -e "$TARGET" ] || [ -L "$TARGET" ]; then
+  echo "已存在：$TARGET"
+  echo "不覆盖。确认要重装就先删掉它（软链用 rm，副本用 rm -rf）。"
+  exit 1
+fi
+
+if [ "$MODE" = "copy" ]; then
+  cp -R "$SRC" "$TARGET"
+  echo "已复制到 $TARGET"
+else
+  ln -s "$SRC" "$TARGET"
+  echo "已软链 $TARGET -> $SRC"
+fi
+
+echo
+echo "下一步："
+echo "  1. 起编辑器：  node <编辑器仓库>/start.mjs --no-open --port=5180 --host=127.0.0.1"
+echo "  2. 起 MCP：    node $(cd "$(dirname "$0")" && pwd)/mcp/server.mjs"
+echo "  3. 重启会话或 /skills reload，然后 /dao3-editor"
+echo
+echo "验证： node $(cd "$(dirname "$0")" && pwd)/skill/dao3-editor/scripts/dao3.mjs health"
