@@ -12,6 +12,7 @@
  */
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { probeCreator, probeApc, runApc, ENGINE_PORTS } from "./creator.mjs";
 import {
   projectInfo, findProject, readEnv, envFiles, listScripts, readBundles,
   readProjectFile, writeProjectFile, apiSearch, apiClass, apiIndex,
@@ -225,6 +226,95 @@ export const TOOLS = {
         bundles: readBundles(root).bundles,
         command: "npm run build && apc script upload <permanentMapId> <side> <entry> --file …",
       });
+    },
+  },
+
+  /* ------------------------- 引擎连接层 ------------------------- */
+
+  engine_status: {
+    desc: "看本机 Creator 引擎与 apc CLI 的状态：3127 连不连得上（未认证会跳登录，这本身就说明服务活着）、apc 装没装、什么版本。不猜私有接口。",
+    needs: [],
+    props: { creator: { type: "string", desc: "Creator 地址，默认取服务启动时的 --creator" } },
+    async run(ctx, a) {
+      const target = a.creator || ctx.creator || "127.0.0.1:3127";
+      const [creator, apc] = await Promise.all([probeCreator(target), probeApc(ctx.apcBin)]);
+      return j({ target, creator, apc, ports: ENGINE_PORTS, note: apc.installed ? "读写引擎请走 engine_projects / engine_run" : "装一下：npm i -g @box3lab/arenapro-cli" });
+    },
+  },
+
+  engine_projects: {
+    desc: "列本机 Creator 引擎里的地图/项目（apc map list --json）。只读。",
+    needs: [],
+    props: {
+      keyword: { type: "string", desc: "按名称或永久地图 ID 过滤" },
+      profile: { type: "string", desc: "指定 Creator Profile 名" },
+    },
+    async run(ctx, a) {
+      const args = ["map", "list"];
+      if (a.keyword) args.push("--keyword", String(a.keyword));
+      if (a.profile) args.push("--profile", String(a.profile));
+      return j(await runApc(args, { bin: ctx.apcBin, cwd: ctx.projectRoot }));
+    },
+  },
+
+  engine_script_get: {
+    desc: "读引擎里那张地图上的共享脚本：不带 entry 列清单，带 entry 读内容（只读，不改远程）。",
+    needs: [],
+    props: {
+      entry: { type: "string", desc: "脚本文件名，如 bootstrap.js；省略则只列清单" },
+      side: { type: "string", desc: "读具体内容时必填：server 或 client" },
+      profile: { type: "string", desc: "指定 Profile 名" },
+      project: { type: "string", desc: "永久地图 ID（map-… 那种）" },
+    },
+    async run(ctx, a) {
+      const args = ["script", "get"];
+      if (a.entry) args.push(String(a.entry), "--side", a.side === "client" ? "client" : "server");
+      if (a.profile) args.push("--profile", String(a.profile));
+      if (a.project) args.push("--project", String(a.project));
+      return j(await runApc(args, { bin: ctx.apcBin, cwd: ctx.projectRoot }));
+    },
+  },
+
+  engine_storage_get: {
+    desc: "读数据空间：list 分页列键、get 取一条。只读；写和删请自己跑 apc（本包的 engine_run 会要求 confirm）。",
+    needs: ["space"],
+    props: {
+      space: { type: "string", desc: "数据空间名" },
+      key: { type: "string", desc: "给了就只读这一条" },
+      limit: { type: "number", desc: "list 时每页条数，1..100，默认 50" },
+      page: { type: "number", desc: "list 时页码，从 0 开始" },
+      scope: { type: "string", desc: "project（默认）或 group" },
+    },
+    async run(ctx, a) {
+      const args = a.key ? ["storage", "get", String(a.space), String(a.key)]
+        : ["storage", "list", String(a.space), "--limit", String(Math.min(100, Math.max(1, Number(a.limit) || 50))), "--page", String(Number(a.page) || 0)];
+      if (a.scope === "group") args.push("--scope", "group");
+      return j(await runApc(args, { bin: ctx.apcBin, cwd: ctx.projectRoot }));
+    },
+  },
+
+  engine_runtime_status: {
+    desc: "看当前地图在 Creator 编辑器里的 Preview Run 状态。只读，不启停。",
+    needs: [],
+    props: { profile: { type: "string", desc: "指定 Profile 名" }, project: { type: "string", desc: "永久地图 ID" } },
+    async run(ctx, a) {
+      const args = ["runtime", "status"];
+      if (a.profile) args.push("--profile", String(a.profile));
+      if (a.project) args.push("--project", String(a.project));
+      return j(await runApc(args, { bin: ctx.apcBin, cwd: ctx.projectRoot }));
+    },
+  },
+
+  engine_run: {
+    desc: "跑一条 apc 命令。只读命令直接放行；会改引擎状态的（upload / storage set / storage delete / runtime start|stop|restart / project bind / scene capture）必须带 confirm:true。绝不接受 --token。",
+    needs: ["args"],
+    props: {
+      args: { type: "array", desc: 'apc 参数数组，如 ["script","upload","map-abc","server","App.js","--file","./dist/server/App.server.js"]' },
+      confirm: { type: "boolean", desc: "写操作的显式确认" },
+    },
+    async run(ctx, a) {
+      const args = Array.isArray(a.args) ? a.args : String(a.args).split(/\s+/).filter(Boolean);
+      return j(await runApc(args, { bin: ctx.apcBin, cwd: ctx.projectRoot, confirm: a.confirm === true }));
     },
   },
 };

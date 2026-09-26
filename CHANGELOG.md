@@ -1,5 +1,23 @@
 # 更新日志
 
+## 0.2.0 — 2026-09-26
+
+- **连本机 Creator 引擎。** 官方引擎 Web 端是 Docker 上的一组服务
+  （3127 Creator / 3125 登录 / 3124 玩家管理 / 3123 VOXA）。它的 HTTP 接口官方无文档，
+  所以不猜私有路径，改为驱动官方 CLI `apc`（一律 `--json`）。新增 6 个引擎工具：
+  `engine_status` / `engine_projects` / `engine_script_get` / `engine_storage_get` /
+  `engine_runtime_status` / `engine_run`。
+- **只读自动、写要确认。** 写与运行控制（`script upload`、`storage set|delete`、
+  `runtime start|stop|restart`、`project bind`、`scene capture`）必须 `confirm:true`；
+  回归测试用标记文件证明被挡下的命令**进程根本没起来**，而不是只看有没有报错。
+- **拒绝代传 `--token`**，也不读 apc 的 Profile 凭据；输出里出现 `bxc_…` 一律隐去。
+- **探测跟着跳转看落点**：3127 未登录时 307 → `/projects` → 3125 登录页，
+  据此区分「服务没起」与「只是没会话」，并原样回显整条链路。
+- 介绍页改成官方 dao3.fun 那套设计语言：深底 + 品牌黄 `#ffdb00` + 胶囊按钮 + 黄色提示卡。
+- 修一个真 bug：`/health` 用了只在启动横幅处动态 import 的函数，抛异常**直接把服务进程打挂**。
+  现在顶层静态 import，且任何路由异常只让那一个请求失败。
+- 断言从 89 条增至 **119 条**（parser 20 + engine 24 + kit 50 + site 25）。
+
 ## 0.1.1 — 2026-09-26
 
 - **对齐 `apc` 0.7.0 的契约。** 之前那份命令表是从本地 `vendor/ArenaPro-CLI` 的 **0.5.4** 副本读的，

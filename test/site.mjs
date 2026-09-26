@@ -18,11 +18,12 @@ const ok = (name, cond, extra = "") => {
 const nLocal = Object.keys(TOOLS).length;
 const nRefused = Object.keys(REFUSED).length;
 
-ok("tools.mjs 的规模与预期一致", nLocal === 10 && nRefused === 46, `实际 ${nLocal}/${nRefused}`);
+ok("tools.mjs 的规模与预期一致", nLocal === 16 && nRefused === 46, `实际 ${nLocal}/${nRefused}`);
+ok("引擎层工具都在册", ["engine_status","engine_projects","engine_run"].every((n) => n in TOOLS));
 
 // 文档里写死的数字漂移过一次教训：版本号在四处各写一遍。
 for (const [file, text] of [["index.html", html], ["README.md", readme]]) {
-  ok(`${file} 说得出 ${nLocal} 个本地工具`, new RegExp(`本地 ${nLocal} 个|${nLocal} 件事|${nLocal} 个工具`).test(text));
+  ok(`${file} 说得出 ${nLocal} 个本地工具`, new RegExp(`本地 ${nLocal} 个|${nLocal} 件事|${nLocal} 个工具|层 ${nLocal} 个`).test(text));
   ok(`${file} 说得出 ${nRefused} 个明确不做`, new RegExp(`${nRefused}`).test(text));
   ok(`${file} 的端口是 25316 而不是官方的 25315`, /25316/.test(text));
 }
@@ -38,7 +39,7 @@ ok("导航锚点全部有落点", hrefs.length > 0 && dead.length === 0, "悬空
 ok("HTML 标签闭合", (html.match(/<\/html>/g) || []).length === 1 && html.trim().endsWith("</html>"));
 ok("带 lang 与 viewport", /<html lang="zh-CN">/.test(html) && /name="viewport"/.test(html));
 ok("有 description 且提到 ArenaPro", /name="description"[^>]*ArenaPro/.test(html));
-ok("深浅两档都有配色", /prefers-color-scheme:dark/.test(html));
+ok("配色跟 dao3.fun 一致（深底 + 品牌黄）", /#ffdb00/.test(html) && /--bg0:#0b0b0c/.test(html), "没沿用官方那套黄+深底");
 
 // 仓库内相对链接不能指到不存在的文件
 const rel = [...new Set([...html.matchAll(/href="(?!https?:|#|mailto:)([^"]+)"/g)].map((m) => m[1]))];

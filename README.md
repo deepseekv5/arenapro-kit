@@ -30,7 +30,7 @@ node mcp/server.mjs --project /path/to/my-arena
 arenapro-kit MCP 已启动     http://127.0.0.1:25316/ap-mcp
 工程目录                  /path/to/my-arena
 官方插件在线              http://127.0.0.1:25315/ap-mcp · 透传 24 个工具
-本包工具                  本地 10 个 · 明确不做 46 个
+本包工具                  本地 16 个 · 明确不做 46 个
 ```
 
 IDE 侧加一个 server（**默认端口 25316，故意让开官方的 25315**）：
@@ -65,7 +65,7 @@ IDE 侧加一个 server（**默认端口 25316，故意让开官方的 25315**�
 官方插件那 24 个工具的**参数 schema 没有公开**，所以本包不猜形状、只做转发——
 猜出来的入参比没有更危险。
 
-## 本地能做的 10 件事
+## 本地能做的 16 件事
 
 | 工具 | 做什么 |
 |---|---|
@@ -77,6 +77,12 @@ IDE 侧加一个 server（**默认端口 25316，故意让开官方的 25315**�
 | `env_show` | 当前绑定的地图；`VITE_DAO3_AUTH` / `_UA` 只报"有没有" |
 | `build_status` | 产物是否比源码旧 |
 | `apc_plan` | 把意图翻译成该跑的 `apc` 命令 |
+| `engine_status` | 探测本机 Creator（3127）与 apc 版本；跟着跳转链判断"活着但没会话" |
+| `engine_projects` | 列引擎里的地图/项目（`apc map list --json`） |
+| `engine_script_get` | 读地图上的共享脚本（只读） |
+| `engine_storage_get` | 读数据空间（只读） |
+| `engine_runtime_status` | 看 Preview Run 状态 |
+| `engine_run` | 跑一条 apc 命令；**写操作必须 `confirm:true`** |
 
 ## API 规范读的是工程自带的 d.ts
 

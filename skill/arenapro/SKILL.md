@@ -15,7 +15,9 @@ description: 在官方 ArenaPro（dao3.fun / 神奇代码岛的桌面创作端�
 
 1. **只走本地。** 不调 `code-api-pc.dao3.fun`，不读任何凭据文件（`auth.json`、`.env` 里的
    `VITE_DAO3_AUTH` / `VITE_DAO3_UA` 值永不出现在输出里）。
-2. **不代跑联网命令。** 需要上传/登录/同步资源时，只给你命令原文，由人决定。
+2. **不碰公网。** 需要登录/同步资源/上传时，只给你命令原文，由人决定。
+   连本机 Creator 引擎（`127.0.0.1:3127`）是允许的——那是你自己机器上的服务；
+   但**只读命令自动跑，写命令必须 `confirm:true`**，且本包拒绝代传 `--token`。
 3. **不编接口。** 官方没有的接口名，直接说没有。
 
 ## 开工先做三件事
@@ -38,6 +40,11 @@ node scripts/arenapro.mjs api <关键词>   # 写任何 API 调用前先查一�
 | 类型声明缺不缺 | `dts_check` | 缺什么给什么 `apc` 命令 |
 | 看绑定的地图 | `env_show` | 凭据只报"有没有" |
 | 该跑什么命令 | `apc_plan` | 只出命令文本 |
+| 看本机引擎 | `engine_status` | Creator 连不连得上、apc 装没装、什么版本 |
+| 列引擎里的地图 | `engine_projects` | 只读，走 `apc map list --json` |
+| 读地图上的脚本 / 数据 | `engine_script_get` / `engine_storage_get` | 只读 |
+| 看预览运行状态 | `engine_runtime_status` | 只读 |
+| 跑一条 apc | `engine_run` | 写操作必须带 `confirm:true`，命令原文会回显 |
 | 构建产物是否过期 | `build_status` | 判断要不要 `npm run build` |
 | 上传 / 统计 / 账号 | **没有** | 调用会得到 `isError` + 替代做法 |
 
@@ -67,6 +74,16 @@ node scripts/arenapro.mjs api <关键词>   # 写任何 API 调用前先查一�
 
 其余要点：四元数是 `xyzw`；两端全局不是一套（写错端不报错，是 `undefined`）；
 存储值必须是 `{"content": …}` 形态、≤2MB、`key`≤1000、`storageName`≤50 且 `^[a-zA-Z0-9_]+$`。
+
+## 本机 Creator 引擎
+
+官方引擎 Web 端是一组 Docker 服务，端口分工固定：**3127 Creator**、**3125 登录**、
+**3124 玩家管理**、**3123 VOXA**。它的 HTTP 接口**官方没有公开文档**，
+所以本包不直连私有路径，而是驱动官方 CLI `apc`（一律 `--json`，只解析标准输出、
+用非零退出码当失败信号）。
+
+未登录时 3127 会 307 → `/projects` → 再跳到 3125 的登录页。本包跟着跳、看落点，
+据此区分"服务没起"与"只是没会话"，并把整条跳转链原样回显。
 
 ## 工程与命令的对应关系
 

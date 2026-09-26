@@ -19,6 +19,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { TOOLS, REFUSED, toolDefs, callLocal } from "./tools.mjs";
 import { SseMcpClient } from "./bridge.mjs";
+import { probeCreator, probeApc } from "./creator.mjs";
 
 const argv = process.argv.slice(2);
 const flag = (k, d) => { const i = argv.indexOf("--" + k); return i >= 0 && argv[i + 1] && !argv[i + 1].startsWith("--") ? argv[i + 1] : d; };
@@ -28,6 +29,8 @@ const PORT = Number(flag("port", process.env.PORT || 25316));
 const HOST = flag("host", process.env.HOST || "127.0.0.1");
 const PROJECT = flag("project", process.env.ARENA_PROJECT || process.cwd());
 const PLUGIN_URL = has("no-plugin") ? null : String(flag("plugin", process.env.ARENA_PLUGIN || "http://127.0.0.1:25315/ap-mcp"));
+const CREATOR = flag("creator", process.env.BOX_CREATOR_ENDPOINT || "127.0.0.1:3127");
+const APC_BIN = flag("apc", process.env.APC_BIN || "apc");
 // 版本号只有一个来源：package.json。写死在两处早晚对不上（介绍页也读它）。
 const VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 const PROTOCOL_FALLBACK = "2024-11-05";
@@ -38,7 +41,7 @@ if (PLUGIN_URL && !/:(25315)\b/.test(PLUGIN_URL) && PORT === 25315) {
 
 /* ------------------------------- 插件桥 ------------------------------- */
 
-const ctx = { projectRoot: PROJECT };
+const ctx = { projectRoot: PROJECT, creator: CREATOR, apcBin: APC_BIN };
 let bridge = null;                 // SseMcpClient | null
 let pluginTools = [];              // [{name, description, inputSchema}]
 let pluginError = null;
@@ -132,7 +135,15 @@ const json = (res, code, obj) => {
   res.end(JSON.stringify(obj, null, 2));
 };
 
-const server = http.createServer(async (req, res) => {
+const server = http.createServer((req, res) => {
+  // 一个处理函数抛异常就把整个服务打挂过：任何路由出错都只该让那一个请求失败。
+  handle(req, res).catch((e) => {
+    if (!res.headersSent) json(res, 500, { error: `处理失败：${(e && e.message) || e}` });
+    else res.end();
+  });
+});
+
+async function handle(req, res) {
   const u = new URL(req.url, `http://${req.headers.host || "localhost"}`);
 
   if (u.pathname === "/ap-mcp" && req.method === "GET") {
@@ -165,7 +176,7 @@ const server = http.createServer(async (req, res) => {
   if (u.pathname === "/api/mcp/tools" && req.method === "GET") {
     await refreshPlugin(false);
     return json(res, 200, {
-      endpoint: "/ap-mcp", transport: "sse", port: PORT, projectRoot: PROJECT,
+      endpoint: "/ap-mcp", transport: "sse", port: PORT, projectRoot: PROJECT, creator: CREATOR,
       plugin: PLUGIN_URL ? { url: PLUGIN_URL, online: !!bridge, error: pluginError, tools: pluginTools.map((t) => t.name) } : { enabled: false },
       local: Object.keys(TOOLS),
       refused: Object.fromEntries(Object.entries(REFUSED).filter(([n]) => !pluginNames().has(n))),
@@ -179,6 +190,8 @@ const server = http.createServer(async (req, res) => {
       ok: true,
       mcp: `http://${HOST}:${PORT}/ap-mcp`,
       plugin: PLUGIN_URL ? { url: PLUGIN_URL, online: !!bridge, serverInfo: bridgeInfo, tools: pluginTools.length, error: pluginError } : { enabled: false },
+      creator: { target: CREATOR, ...(await probeCreator(CREATOR)) },
+      apc: await probeApc(APC_BIN),
       project: findProject(PROJECT) ? findProject(PROJECT) : { isProject: false, cwd: PROJECT },
       local: Object.keys(TOOLS).length,
       refused: Object.keys(REFUSED).length,
@@ -187,7 +200,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   json(res, 404, { error: "not found", endpoints: ["/ap-mcp (SSE)", "/ap-mcp/messages (POST)", "/api/mcp/tools", "/health"] });
-});
+}
 
 server.on("error", (e) => {
   if (e.code === "EADDRINUSE") {
@@ -204,6 +217,12 @@ server.listen(PORT, HOST, async () => {
   if (!PLUGIN_URL) console.log(`官方插件                  已用 --no-plugin 关掉探测`);
   else if (bridge) console.log(`官方插件在线              ${PLUGIN_URL} · 透传 ${pluginTools.length} 个工具${bridgeInfo?.name ? ` · ${bridgeInfo.name}` : ""}`);
   else console.log(`未检测到官方插件          ${PLUGIN_URL}（${pluginError}）\n                          官方工具会返回"不支持 + 该跑什么命令"，本地工程层照常可用`);
+  const [cr, apc] = await Promise.all([probeCreator(CREATOR), probeApc(APC_BIN)]);
+  if (!has("no-creator")) {
+    console.log(`本地 Creator              ${CREATOR} · ${cr.reachable ? (cr.state === "unauthenticated" ? "可达（未认证会跳登录）" : "可达") : `不可达（${cr.error}）`}`);
+    if (cr.reachable && cr.hint) console.log(`                          ${cr.hint}`);
+  }
+  console.log(`apc CLI                   ${apc.installed ? `已装 v${apc.version}` : `未安装（引擎读写走不了；npm i -g @box3lab/arenapro-cli）`}`);
   console.log(`本包工具                  本地 ${Object.keys(TOOLS).length} 个 · 明确不做 ${Object.keys(REFUSED).length} 个`);
 });
 
