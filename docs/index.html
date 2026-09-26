@@ -33,12 +33,13 @@ code{font-family:var(--mono);overflow-wrap:anywhere;word-break:break-word}
 .wrap{max-width:var(--maxw);margin:0 auto;padding:0 22px}
 
 header{position:sticky;top:0;z-index:20;background:rgba(12,12,13,.86);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
-.bar{display:flex;align-items:center;gap:18px;height:58px}
+.bar{display:flex;align-items:center;gap:10px 18px;min-height:58px;flex-wrap:wrap;padding:8px 0}
 .mark{display:flex;align-items:baseline;gap:9px;font-weight:700;letter-spacing:.2px;white-space:nowrap}
 .mark b{color:var(--primary)}
 .mark s{text-decoration:none;color:var(--fg3);font-weight:400;font-size:12.5px}
-nav{display:flex;gap:4px;margin-left:auto;flex-wrap:wrap}
-nav a{padding:6px 11px;border-radius:8px;color:var(--fg2);font-size:13.5px}
+nav{display:flex;gap:4px;margin-left:auto;flex-wrap:nowrap;overflow-x:auto;max-width:100%;scrollbar-width:none}
+nav::-webkit-scrollbar{display:none}
+nav a{padding:6px 11px;border-radius:8px;color:var(--fg2);font-size:13.5px;white-space:nowrap}
 nav a:hover{background:var(--bg3);color:var(--fg)}
 
 .hero{padding:74px 0 30px;display:grid;grid-template-columns:1.05fr .95fr;gap:44px;align-items:center}
@@ -105,6 +106,7 @@ footer{border-top:1px solid var(--line);padding:34px 0 52px;color:var(--fg3);fon
 footer .links{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:12px}
 footer a:hover{color:var(--primary)}
 @media(max-width:900px){
+  html{scroll-padding-top:118px}
   .hero{grid-template-columns:1fr;padding-top:44px;gap:30px}
   .grid2{grid-template-columns:1fr}
   h1{font-size:29px}
