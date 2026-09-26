@@ -5,3 +5,7 @@ node_modules/
 .env.*
 *token*
 .qoder/
+
+# 夹具里的 .env 是假的哨兵值，专门用来证明脱敏；不提交就没法测
+!test/fixtures/**/.env
+!test/fixtures/**/.env.*

@@ -1,293 +1,312 @@
 /**
- * tools.mjs — ArenaPro 兼容 MCP 的工具表。
+ * tools.mjs — 本包自己提供的工具。
  *
- * 官方契约（ArenaPro 插件 MCP）：SSE 传输，默认 http://localhost:25315/ap-mcp，
- * 工具名如 file_mapTool / map_showMap。这里路径与工具名照官方，只换实现。
+ * 三条边界，都是刻意的：
+ *   1. **只走本地。** 不碰 code-api-pc.dao3.fun，也不读任何凭据文件。
+ *      需要账号/上传/统计的官方工具照样出现在 tools/list 里（客户端按官方清单调用时
+ *      拿到 unknown tool 会开始猜接口），但调用一律 isError + 该跑哪条 apc 命令。
+ *   2. **不代跑网络命令。** 只把命令原文给你，让人决定。
+ *   3. **写文件钉死在工程根里**，越界、改类型不允许、目标被人动过就先问。
  *
- * **全部走编辑器的 HTTP API，不读它的文件、不 import 它的模块。**
- * 这是它作为独立仓库的前提：只要编辑器服务在跑就能用，编辑器换版本、换目录、
- * 甚至换成官方桌面版都不影响这一层。顺带把"路径穿越能不能写出资产目录"
- * 这类问题交还给唯一该负责它的地方——服务端自己的那道闸。
- *
- * 一条硬规矩：**做不到的工具直接说不支持，不假装成功。**
- * userCenterTool_*（账号 / Token）依赖神岛线上账号体系，这里没有账号系统，
- * 所以它们出现在 tools/list 里但一律返回明确的"不支持 + 为什么"。
- * 一个会返回假 token 的登录工具，比没有这个工具危险得多。
+ * 官方插件的 24 个工具不在这里——那部分是 mcp/bridge.mjs 连上 25315 后原样透传的。
  */
+import { existsSync, statSync } from "node:fs";
+import { join } from "node:path";
+import {
+  projectInfo, findProject, readEnv, envFiles, listScripts, readBundles,
+  readProjectFile, writeProjectFile, apiSearch, apiClass, apiIndex,
+} from "./project.mjs";
 
-/* ------------------------------ 知识库缓存 ------------------------------ */
-// 规范与方块表从编辑器拉，缓存一次。拉不到时**不缓存空值**——
-// 否则编辑器刚重启，这个进程会永久认为"规范里 0 个成员"，checkDts 就变成一台
-// 永远说"全部能找到"的机器。
-const cache = new Map();
-async function cachedJson(ctx, path) {
-  if (cache.has(path)) return cache.get(path);
-  const v = await ctx.getJson(path).catch(() => null);
-  if (v) cache.set(path, v);
-  return v;
-}
-
-/** api-spec.json 的真实形状：{classes:{类名:{side,kind,d,m:{成员名:{s,d}}}}} */
-function eachMember(spec, fn) {
-  for (const [cname, cls] of Object.entries((spec && spec.classes) || {})) {
-    fn(cname, cls, null);
-    for (const [mname, m] of Object.entries((cls && cls.m) || {})) fn(cname, cls, { name: mname, ...m });
+const rootOf = (ctx, argRoot) => {
+  const found = findProject(argRoot || ctx.projectRoot || process.cwd());
+  if (!found) {
+    throw new Error(
+      "这里不是 ArenaPro 工程（要同时有 dao3.config.* 与 client/ server/）。" +
+      "新建一个：apc create my-project；已有工程请把本服务的工作目录指到工程根，或调用时带 root。"
+    );
   }
-}
+  return found.root;
+};
 
-function searchSpec(spec, query, limit = 10) {
-  const q = String(query || "").toLowerCase().trim();
-  if (!q) return [];
-  const terms = q.split(/[\s.()、,，]+/).filter(Boolean);
-  const hits = [];
-  eachMember(spec, (cname, cls, m) => {
-    const label = m ? `${cname}.${m.name}` : cname;
-    const hay = `${label} ${(m ? m.d : cls.d) || ""} ${(m ? m.s : "") || ""} ${cls.side || ""}`.toLowerCase();
-    let score = 0;
-    for (const t of terms) {
-      if (!t || !hay.includes(t)) continue;
-      score += t.length > 3 ? 3 : 2;
-      if (label.toLowerCase() === t) score += 8;
-      else if (label.toLowerCase().startsWith(t)) score += 3;
-    }
-    if (score) hits.push({ label, score, sig: m ? m.s : (cls.kind || ""), d: ((m ? m.d : cls.d) || "").replace(/\s+/g, " ").slice(0, 160), side: cls.side || "" });
-  });
-  return hits.sort((a, b) => b.score - a.score).slice(0, limit)
-    .map((h) => `${h.label}${h.sig ? "  " + h.sig : ""}${h.side ? `  [${h.side}]` : ""}${h.d ? "  — " + h.d : ""}`);
-}
+const j = (o) => JSON.stringify(o, null, 2);
 
-const SPEC_PATH = "/data/api-spec.json";
-const ATLAS_PATH = "/data/block-atlas.json";
+/* ------------------------------- 本地工具 ------------------------------- */
 
-/* ------------------------------ 工具表 ------------------------------ */
-/** 每个工具：desc、needs、run(ctx,args) → 字符串 或 {text,isError} */
 export const TOOLS = {
-  file_mapTool: {
-    desc: "地图选择：列出编辑器里全部地图（id、名称、尺寸、体素数、实体数、脚本数）。",
+  project_info: {
+    desc: "看当前 ArenaPro 工程：bundle 配置、env 键（凭据只报有无）、两端 d.ts 是否就位、脚本与构建产物数量。第一步就该调它。",
     needs: [],
-    async run(ctx) {
-      const r = await ctx.getJson("/api/worlds");
-      const ws = (r && r.worlds) || [];
-      if (!ws.length) return "编辑器里还没有任何地图。用 file_createProject 建一张。";
-      return `共 ${ws.length} 张地图：\n` + ws.map((w) =>
-        `${w.id}  ${w.name || "(未命名)"}  ${w.shape}  ${w.blockCount}格  实体${w.entities}  脚本${w.scripts}`).join("\n");
-    },
-  },
-
-  map_showMap: {
-    desc: "显示地图创作端：返回该地图的创作端地址与结构摘要。",
-    needs: ["mapId"],
+    props: { root: { type: "string", desc: "工程内任一路径，默认用服务的工作目录" } },
     async run(ctx, a) {
-      const w = await ctx.readWorld(a.mapId);
-      if (!w) return { text: `找不到地图 ${a.mapId}`, isError: true };
-      const m = w.meta || {};
-      const n = (k) => (Array.isArray(m[k]) ? m[k].length : 0);
-      return [`创作端地址：${ctx.editor}/edit/${a.mapId}`,
-        `名称：${m.name || "(未命名)"}  尺寸：${(w.shape || []).join("×")}  体素：${(w.data || []).length}`,
-        `实体 ${n("entities")}、脚本 ${n("scripts")}、区域 ${n("zones")}、界面节点 ${n("ui")}、商品 ${n("products")}`].join("\n");
+      const info = projectInfo(a.root || ctx.projectRoot || process.cwd());
+      if (!info.isProject) return { isError: true, text: j(info) };
+      const count = (o) => Object.values(o).reduce((n, t) => n + Object.keys(t.members).length, 0);
+      return j({
+        root: info.root,
+        configFile: info.configFile,
+        bundles: info.bundles,
+        env: { files: info.envFiles, mode: info.env.file, keys: info.env.keys },
+        types: info.dts,
+        apiSurface: (() => { const i = apiIndex(info.root); return { classes: Object.keys(i.types).length, members: count(i.types) }; })(),
+        scripts: {
+          server: info.scripts.src.server.length, client: info.scripts.src.client.length,
+          shares: info.scripts.src.shares.length,
+          typeFiles: [...info.scripts.types.server, ...info.scripts.types.client, ...info.scripts.types.shares],
+          distServer: info.scripts.dist.server, distClient: info.scripts.dist.client,
+        },
+        pkg: info.pkg ? { name: info.pkg.name, scripts: Object.keys(info.pkg.scripts || {}) } : null,
+      });
     },
   },
 
-  map_playData: {
-    desc: "查看游玩数据：返回该图的结构统计与规则。没有线上留存统计可查（见文末说明）。",
-    needs: ["mapId"],
+  script_list: {
+    desc: "列出工程两端的源码文件与构建产物（server/ client/ shares/ 与 dist/*）。",
+    needs: [],
+    props: { root: { type: "string", desc: "工程内任一路径" } },
     async run(ctx, a) {
-      const w = await ctx.readWorld(a.mapId);
-      if (!w) return { text: `找不到地图 ${a.mapId}`, isError: true };
-      const m = w.meta || {};
-      const gr = m.gameRules || {};
-      const n = (k) => (Array.isArray(m[k]) ? m[k].length : 0);
-      return [`地图 ${a.mapId}（${m.name || "未命名"}）`,
-        `体素 ${(w.data || []).length} / 尺寸 ${(w.shape || []).join("×")}`,
-        `实体 ${n("entities")}、脚本 ${n("scripts")}、区域 ${n("zones")}、商品 ${n("products")}`,
-        `规则 tpm=${gr.tpm ?? 15.625}（官方 64ms/tick → 15.625 tick/秒）`,
-        `说明：本地编辑器没有官方服务器的在线游玩/留存统计，这里全是静态结构数据。`].join("\n");
+      const root = rootOf(ctx, a.root);
+      return j(listScripts(root));
     },
   },
 
-  map_resource: {
-    desc: "同步地图资源：列出该地图已落盘的资产（模型、图片、音频）。",
-    needs: ["mapId"],
+  script_read: {
+    desc: "读工程内一个文件（限 client/ server/ shares/ 等目录内的源码/配置/文档类型）。",
+    needs: ["path"],
+    props: {
+      path: { type: "string", desc: "相对工程根的路径，如 server/src/App.ts" },
+      root: { type: "string", desc: "工程内任一路径" },
+    },
     async run(ctx, a) {
-      const r = await ctx.getJson(`/api/world/${encodeURIComponent(a.mapId)}/asset`).catch(() => null);
-      const list = (r && (r.assets || r.files)) || [];
-      if (!Array.isArray(list) || !list.length) return `地图 ${a.mapId} 还没有落盘资产。`;
-      return `资产 ${list.length} 个：\n` + list.map((f) => `${f.path || f}  ${f.bytes ?? f.size ?? 0}B`).join("\n");
+      const root = rootOf(ctx, a.root);
+      const f = readProjectFile(root, a.path);
+      return `${f.path}  ${f.bytes}B\n\n${f.text}`;
     },
   },
 
-  file_createProject: {
-    desc: "创建项目：新建一张地图（默认带一层地面，避免玩家一出生就掉出世界）。shape 形如 64,64,64。",
-    needs: ["name"],
+  script_write: {
+    desc: "写工程内一个文件。目标在你读取后被改过会先拒绝（避免盖掉 IDE 自动格式化的结果），确认要覆盖带 force:true。",
+    needs: ["path", "content"],
+    props: {
+      path: { type: "string", desc: "相对工程根的路径" },
+      content: { type: "string", desc: "完整文件内容（整份覆盖，不是补丁）" },
+      ifUnchangedSince: { type: "number", desc: "script_read 返回的 mtimeMs" },
+      force: { type: "boolean", desc: "确认覆盖" },
+      root: { type: "string", desc: "工程内任一路径" },
+    },
     async run(ctx, a) {
-      const id = String(a.mapId || "m" + Date.now().toString(36));
-      if (!/^[a-zA-Z0-9_-]{1,80}$/.test(id)) return { text: `mapId 不合法：${id}（只允许字母数字下划线连字符）`, isError: true };
-      const shape = String(a.shape || "64,64,64").split(",").map(Number);
-      if (shape.length !== 3 || shape.some((n) => !(n > 0 && n <= 512))) return { text: `shape 要三个 1..512 的数字，收到 ${a.shape}`, isError: true };
-      const indices = [], data = [], rot = [];
-      const floor = a.floor === undefined ? 0 : Number(a.floor);
-      if (floor >= 0) {
-        for (let x = 0; x < shape[0]; x++) for (let z = 0; z < shape[2]; z++) {
-          indices.push(x + floor * shape[0] + z * shape[0] * shape[1]); data.push(1); rot.push(0);
-        }
-      }
-      const ok = await ctx.writeWorld(id, { formatVersion: "unity", shape, dir: [1, 1, 1], indices, data, rot, meta: { name: a.name, created: Date.now() } });
-      if (!ok) return { text: "写入失败，看服务端日志", isError: true };
-      return `已创建地图 ${id}（${a.name}，${shape.join("×")}，地面 ${indices.length} 格）\n创作端：${ctx.editor}/edit/${id}`;
+      const root = rootOf(ctx, a.root);
+      const r = writeProjectFile(root, a.path, a.content, { ifUnchangedSince: a.ifUnchangedSince, force: a.force });
+      return `已${r.created ? "创建" : "覆盖"} ${r.path}（${r.bytes}B）。构建并上传要你自己跑：apc upload`;
     },
   },
 
-  file_upLoad: {
-    desc: "上传 JS 文件：把一段脚本写进地图的指定端（server / client）。等价于官方 apc upload 的本地版。",
-    needs: ["mapId", "end", "code"],
-    async run(ctx, a) {
-      const w = await ctx.readWorld(a.mapId);
-      if (!w) return { text: `找不到地图 ${a.mapId}`, isError: true };
-      const end = String(a.end || "").toLowerCase();
-      if (end !== "server" && end !== "client") return { text: `end 只能是 server 或 client，收到 ${a.end}`, isError: true };
-      w.meta = w.meta || {};
-      if (!Array.isArray(w.meta.scripts)) w.meta.scripts = [];
-      const name = a.name || "index.js";
-      let s = w.meta.scripts.find((x) => x.name === name);
-      if (!s) { s = { name, server: "", client: "" }; w.meta.scripts.push(s); }
-      s[end] = String(a.code);
-      if (!await ctx.writeWorld(a.mapId, w)) return { text: "写入失败", isError: true };
-      return `已写入 ${a.mapId} 的 ${end} 端脚本「${name}」（${s[end].length} 字符）。地图现有 ${w.meta.scripts.length} 个脚本。`;
-    },
-  },
-
-  file_buildNUpload: {
-    desc: "构建和上传：从本地 ArenaPro 工程目录读 dist/server 与 dist/client 的 js，合并写进地图两端。",
-    needs: ["mapId", "dir"],
-    async run(ctx, a) {
-      const fs = await import("node:fs");
-      const path = await import("node:path");
-      const w = await ctx.readWorld(a.mapId);
-      if (!w) return { text: `找不到地图 ${a.mapId}`, isError: true };
-      // 读的是调用方指定的本地工程目录——这是本工具唯一碰磁盘的地方，
-      // 且只读不写：写盘一律走编辑器 HTTP。
-      const root = path.resolve(String(a.dir));
-      if (!fs.existsSync(root)) return { text: `目录不存在：${root}`, isError: true };
-      w.meta = w.meta || {};
-      if (!Array.isArray(w.meta.scripts)) w.meta.scripts = [];
-      const lines = [];
-      for (const [sub, end] of [["server", "server"], ["client", "client"]]) {
-        const d = path.join(root, "dist", sub);
-        if (!fs.existsSync(d)) { lines.push(`${end}: 没有 ${d}，跳过`); continue; }
-        const files = fs.readdirSync(d).filter((f) => /\.(js|cjs|mjs)$/i.test(f));
-        if (!files.length) { lines.push(`${end}: ${d} 里没有 js 文件`); continue; }
-        const code = files.map((f) => `// ==== ${f} ====\n${fs.readFileSync(path.join(d, f), "utf8")}`).join("\n");
-        let s = w.meta.scripts.find((x) => x.name === "index.js");
-        if (!s) { s = { name: "index.js", server: "", client: "" }; w.meta.scripts.push(s); }
-        s[end] = code;
-        lines.push(`${end}: 合并 ${files.length} 个文件，${code.length} 字符`);
-      }
-      if (!await ctx.writeWorld(a.mapId, w)) return { text: "写入失败", isError: true };
-      return `构建上传完成 ${a.mapId}\n` + lines.join("\n");
-    },
-  },
-
-  file_checkDts: {
-    desc: "检查 Dts 文件：拿编辑器携带的 API 规范核对脚本引用的成员是否真实存在。",
-    needs: ["code"],
-    async run(ctx, a) {
-      const spec = await cachedJson(ctx, SPEC_PATH);
-      const known = new Set();
-      eachMember(spec, (cname, cls, m) => { known.add(cname); if (m) known.add(m.name); });
-      if (known.size < 50) return { text: `读不到 API 规范（${ctx.editor}${SPEC_PATH}）。编辑器服务在跑吗？规范是 npm run build:api-ref 生成的。`, isError: true };
-      // 先剥注释与字符串：否则注释里的示例、日志文案里的 world.say 都会被当成引用
-      const code = String(a.code).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "")
-        .replace(/(["'`])(?:\\.|(?!\1)[\s\S])*?\1/g, '""');
-      const used = new Map();
-      for (const m of code.matchAll(/\b(world|player|game|entity)\.([A-Za-z_$][\w$]*)/g)) if (!used.has(m[2])) used.set(m[2], m[1]);
-      const unknown = [...used.entries()].filter(([name]) => !known.has(name));
-      const lines = [`规范里有 ${known.size} 个名字；脚本引用了 ${used.size} 个成员。`];
-      if (unknown.length) {
-        lines.push(`查不到的 ${unknown.length} 个：`);
-        for (const [name, obj] of unknown.slice(0, 20)) lines.push(`  ${obj}.${name}  ← 规范里没有这个成员`);
-        lines.push("注意：其中可能有你自己挂在对象上的自定义字段，那不算错；拼错的官方接口才是。");
-      } else lines.push("全部能在规范里找到。");
-      return lines.join("\n");
-    },
-  },
-
-  chatjpt_onlyKnowledgeBase: {
-    desc: "仅查询知识库：在编辑器携带的 API 规范（含官方中文说明与单位）里检索。不联网、不调模型。",
+  api_search: {
+    desc: "在工程自带的 GameAPI.d.ts / ClientAPI.d.ts 里检索官方 API（类名、成员名、中文说明）。查不到就是官方没有这个名字。",
     needs: ["query"],
+    props: {
+      query: { type: "string", desc: "关键词，如 say、quaternion、存储" },
+      limit: { type: "number", desc: "最多返回几条，默认 12" },
+      root: { type: "string", desc: "工程内任一路径" },
+    },
     async run(ctx, a) {
-      const spec = await cachedJson(ctx, SPEC_PATH);
-      if (!spec) return { text: `读不到 API 规范（${ctx.editor}${SPEC_PATH}）`, isError: true };
-      const hits = searchSpec(spec, a.query);
-      return hits.length ? hits.join("\n")
-        : `知识库里没找到「${a.query}」。这通常意味着**官方没有这个接口**——不要凭印象编一个出来。试试类名（GameWorld / GamePlayer）或成员名（say / raycast）。`;
+      const root = rootOf(ctx, a.root);
+      const r = apiSearch(root, a.query, Number(a.limit) || 12);
+      if (r.missing.length) {
+        r.note = `缺少类型声明：${r.missing.join(", ")}。先跑 apc resource -s api 从官方拉进工程。`;
+      }
+      return j(r);
     },
   },
 
-  component_showComponentStats: {
-    desc: "显示组件统计：这张地图的界面节点、区域、商品、脚本与实体分布。",
-    needs: ["mapId"],
+  api_class: {
+    desc: "列出一个官方类/接口的全部成员签名与中文说明（如 GamePlayer、GameWorld、UiText）。",
+    needs: ["name"],
+    props: { name: { type: "string", desc: "类名" }, root: { type: "string", desc: "工程内任一路径" } },
     async run(ctx, a) {
-      const w = await ctx.readWorld(a.mapId);
-      if (!w) return { text: `找不到地图 ${a.mapId}`, isError: true };
-      const m = w.meta || {};
-      const byType = {};
-      for (const n of (m.ui || [])) { const k = n.type || n.kind || "?"; byType[k] = (byType[k] || 0) + 1; }
-      const atlas = await cachedJson(ctx, ATLAS_PATH);
-      const n = (k) => (Array.isArray(m[k]) ? m[k].length : 0);
-      return [`界面节点 ${n("ui")}${Object.keys(byType).length ? "：" + Object.entries(byType).map(([k, v]) => `${k}×${v}`).join(" ") : ""}`,
-        `区域 ${n("zones")}、商品 ${n("products")}、脚本 ${n("scripts")}、实体 ${n("entities")}`,
-        `方块种类 ${atlas && atlas.blocks ? atlas.blocks.length : "未知"}`].join("\n");
+      const root = rootOf(ctx, a.root);
+      return j(apiClass(root, a.name));
     },
   },
 
-  file_outputName: {
-    desc: "输出和更新文件：把内容写到该地图的资产目录（供脚本 resources.ls 读取）。",
-    needs: ["mapId", "path", "content"],
+  dts_check: {
+    desc: "检查工程是否具备官方类型声明与生成的资产/UiIndex 文件，缺什么就给出该跑的 apc 命令。",
+    needs: [],
+    props: { root: { type: "string", desc: "工程内任一路径" } },
     async run(ctx, a) {
-      const raw = String(a.path).replace(/^[/\\]+/, "");
-      // 带 .. 的直接拒，不做"清洗后照写还报成功"。
-      // 真正的边界由服务端的资产接口把守；这里先拒是为了给调用方一个明确理由，
-      // 而不是让它收到一个看不懂的 400。
-      if (raw.split(/[/\\]/).some((seg) => seg === "..")) return { text: "拒绝：path 里不允许有 .. 段（只能写在该地图资产目录内）", isError: true };
-      if (!raw) return { text: "path 不能为空", isError: true };
-      const body = typeof a.content === "string" ? a.content : JSON.stringify(a.content, null, 2);
-      const r = await ctx.postAsset(a.mapId, raw, body);
-      if (!r.ok) return { text: `写入失败：${r.error || "未知原因"}`, isError: true };
-      return `已写 ${raw}（${r.bytes ?? body.length}B）→ ${ctx.editor}/assets/${a.mapId}/${raw}`;
+      const root = rootOf(ctx, a.root);
+      const want = [
+        ["server/types/GameAPI.d.ts", "apc resource -s api"],
+        ["client/types/ClientAPI.d.ts", "apc resource -s api"],
+        ["shares/types/GameAssets.d.ts", "apc resource -s assets"],
+        ["client/UiIndex/index.ts", "apc resource"],
+      ];
+      const rows = want.map(([p, cmd]) => ({ path: p, exists: existsSync(join(root, p)), fix: cmd }));
+      const idx = apiIndex(root);
+      return j({ root, rows, missing: rows.filter((r) => !r.exists).map((r) => r.path), apiSurface: idx.sources });
+    },
+  },
+
+  env_show: {
+    desc: "看当前工程绑定的地图与配置。凭据类键（VITE_DAO3_AUTH / _UA）只报有没有，值不会出现。",
+    needs: [],
+    props: {
+      mode: { type: "string", desc: "env 后缀，如 dev → .env.dev；默认 .env" },
+      root: { type: "string", desc: "工程内任一路径" },
+    },
+    async run(ctx, a) {
+      const root = rootOf(ctx, a.root);
+      const e = readEnv(root, a.mode);
+      const mapKeys = ["VITE_DAO3_MAP_ID", "VITE_DAO3_MAP_NAME", "VITE_DAO3_PLAY_HASH", "VITE_DAO3_EDIT_HASH"];
+      return j({
+        file: e.file, exists: e.exists,
+        map: Object.fromEntries(mapKeys.map((k) => [k, e.keys[k]?.value ?? null])),
+        credentials: {
+          VITE_DAO3_AUTH: e.keys.VITE_DAO3_AUTH?.present ? "已配置（值不显示）" : "未配置",
+          VITE_DAO3_UA: e.keys.VITE_DAO3_UA?.present ? "已配置（值不显示）" : "未配置",
+        },
+        otherKeys: Object.keys(e.keys).filter((k) => !mapKeys.includes(k) && !["VITE_DAO3_AUTH", "VITE_DAO3_UA"].includes(k)),
+        files: envFiles(root),
+        hint: e.exists ? null : `没有 ${e.file}。绑定地图：apc set <地图ID或名称> --env ${a.mode || ""}`.trim(),
+      });
+    },
+  },
+
+  apc_plan: {
+    desc: "把要做的事翻译成该跑的 apc 命令原文。本服务不代跑任何联网命令。",
+    needs: ["intent"],
+    props: { intent: { type: "string", desc: "login | bindMap | sync | build | upload | preview | create | info" } },
+    async run(ctx, a) {
+      const map = {
+        login: ["apc login", "浏览器授权后写入全局配置；只想给当前工程用：apc login --env"],
+        bindMap: ["apc set <地图ID / playHash / 名称>", "把地图信息写进 .env（VITE_DAO3_MAP_ID / _PLAY_HASH / _EDIT_HASH / _MAP_NAME）"],
+        sync: ["apc resource", "同步资源与类型声明；只要 API：apc resource -s api；只要静态资源：-s assets"],
+        build: ["npm run build", "产物在 dist/server 与 dist/client，文件名形如 bundle.server.js"],
+        upload: ["apc upload", "两端依次上传；单端：apc upload server。只认 js/cjs/mjs 并统一改成 .js"],
+        preview: ["apc preview", "开创作页；游玩页：apc preview play"],
+        create: ["apc create <项目名>", "用官方脚手架建工程（会往目标目录复制，已存在时不提示）"],
+        info: ["apc info", "看登录态、当前地图配置、Node/npm/git 版本与 env 文件清单"],
+      };
+      const want = String(a.intent).toLowerCase();
+      const hit = map[want];
+      if (!hit) return { isError: true, text: `未知意图 ${a.intent}。可选：${Object.keys(map).join(" | ")}` };
+      return `${hit[0]}\n${hit[1]}`;
+    },
+  },
+
+  build_status: {
+    desc: "看构建产物状态：dist 里有没有两端 bundle、是否比源码旧（据此判断该不该重新构建）。",
+    needs: [],
+    props: { root: { type: "string", desc: "工程内任一路径" } },
+    async run(ctx, a) {
+      const root = rootOf(ctx, a.root);
+      const s = listScripts(root);
+      const newest = (list) => list.reduce((m, rel) => Math.max(m, safeMtime(join(root, rel))), 0);
+      const srcM = Math.max(newest(s.src.server), newest(s.src.client));
+      const distM = Math.max(newest(s.dist.server), newest(s.dist.client));
+      return j({
+        distServer: s.dist.server, distClient: s.dist.client,
+        stale: distM > 0 ? srcM > distM : "还没有构建产物",
+        bundles: readBundles(root).bundles,
+        command: "npm run build && apc upload",
+      });
     },
   },
 };
 
+function safeMtime(p) {
+  try { return existsSync(p) ? statSync(p).mtimeMs : 0; } catch { return 0; }
+}
+
+/* 统计/运营类工具共用同一条理由，但**每条文本都得自包含**：
+   AI 只看得到被调用的那一句，"同上"对它没有信息量。 */
+const STATS_REFUSED = "查神岛平台的统计与运营数据要出网，本包不碰官方接口。请挂官方 @box3lab/statistics-mcp，或自己在浏览器里看创作端后台。";
+
+/* --------------------- 官方有、但本包明确不做 --------------------- */
+
 /**
- * 官方有但这里**做不到**的。仍然出现在 tools/list 里：
- * 客户端按官方清单调用时若拿到 "unknown tool"，Agent 会以为契约对不上而开始猜接口。
- * 给一个明确的"不支持 + 为什么"比沉默或假装成功都好。
+ * 这些名字保留在 tools/list 里，调用得到 isError + 原因 + 替代做法。
+ * 直接不列出来，客户端会以为契约对不上，然后开始猜接口。
  */
-export const UNSUPPORTED = {
-  userCenterTool_userTokenAndUA: "本工具没有账号系统，不存在 Token / UserAgent，也不会代你向神岛发起授权。要连官方账号请用官方 ArenaPro 插件。",
-  userCenterTool_userInfo: "本工具没有账号系统，查不到用户信息。",
-  userCenterTool_accountsLogin: "本工具不做登录：没有可登录的账号体系。",
-  userCenterTool_accountsLogout: "本工具没有会话可登出。",
-  file_npm_package_get: "不查 npm registry。包清单见编辑器仓库的 docs/dependencies.md。",
-  file_npm_package_path: "同上。",
-  file_openArena: "这是 IDE 动作，本工具无法替你打开资源管理器。",
-  file_reHMR: "编辑器无构建步骤、无 HMR：改完文件直接刷新浏览器。",
-  file_stopHMR: "同上，没有 HMR 可停。",
-  file_debugger: "调试器是 IDE 能力，本工具不接管。",
-  file_openOutputLog: "日志在启动编辑器的那个终端里；接口统计可 GET /api/stats。",
-  file_dao3config_open: "本工具不读写 dao3.config.ts；地图配置在 world 的 meta 字段里。",
-  file_nodeJs_setting: "本工具与编辑器都只用 Node 内置模块，没有第三方依赖要配。",
+export const REFUSED = {
+  userCenterTool_userTokenAndUA: "本包不读凭据、不碰官方账号接口。要拿 Token 请用官方 ArenaPro 插件，或自己跑 apc login（写入全局配置）。",
+  userCenterTool_userInfo: "本包不读凭据、不碰官方账号接口。账号信息请由官方 ArenaPro 插件提供，或在终端跑 apc info。",
+  userCenterTool_accountsLogin: "请自己跑 apc login。授权会在浏览器里打开 dao3.fun，本包不代跑联网命令。",
+  userCenterTool_accountsLogout: "本包不管理登录态。",
+  "script.saveOrUpdate": "写脚本到神岛地图要出网，本包不做。构建后请跑 apc upload（或配 vite-plugin-arenapro-script 自动上传）。",
+  "script.rename": "需要官方接口。本包能改工程内文件名与内容，但改名后必须重新构建上传。",
+  "storage.get": "地图运行时存储要出网。本地开发请在地图脚本里用 GameWorld 的 storage API，或用 apc 相关命令。",
+  "storage.set": "写线上存储要出网，本包不做。地图运行时的存储请在脚本里用官方 storage API；要离线跑就把数据写在工程内的 json 资产里。",
+  "storage.remove": "删线上存储键要出网，本包不做。请挂官方 @box3lab/engine-openapi-mcp 或在脚本里处理。",
+  "storage.page": "分页读线上存储要出网，本包不做。请挂官方 @box3lab/engine-openapi-mcp。",
+  getUserProfileByUserId: STATS_REFUSED,
+  getMapInfoByUserId: STATS_REFUSED,
+  getMapCommentListByUserId: STATS_REFUSED,
+  getMapReleaseInfoByUserId: STATS_REFUSED,
+  getMapListByUserId: STATS_REFUSED,
+  getModelListByUserId: STATS_REFUSED,
+  getFavoriteListByUserId: STATS_REFUSED,
+  getRecentlyPlayListByUserId: STATS_REFUSED,
+  getFollowerListByUserId: STATS_REFUSED,
+  getFriendListByUserId: STATS_REFUSED,
+  getFollowingListByUserId: STATS_REFUSED,
+  getMapListByKeyword: STATS_REFUSED,
+  getCommentList: STATS_REFUSED,
+  getLikeList: STATS_REFUSED,
+  getSystemMsgList: STATS_REFUSED,
+  getMapStatList: STATS_REFUSED,
+  getMapPlayerStatList: STATS_REFUSED,
+  getMapPlayerRetention: STATS_REFUSED,
+  getMapPlayerBehavior: STATS_REFUSED,
+  file_reHMR: "官方插件的 HMR 由插件自己管；没检测到插件时本包不会假装重启它。",
+  file_stopHMR: "HMR 由官方 ArenaPro 插件自己管；没连上插件时本包不会假装停掉了它。",
+  file_debugger: "调试要 VS Code 的 launch 配置（.vscode/launch.json 已指向 dist/{server,client}/bundle.*.js）。本包不驱动 IDE。",
+  file_openOutputLog: "本包不驱动 IDE 界面。",
+  file_openArena: "本包不驱动 IDE 界面。开创作页用 apc preview。",
+  file_dao3config_open: "直接读工程里的 dao3.config.ts：本包的 script_read 就能看。",
+  file_nodeJs_setting: "本包不改 IDE 设置。",
+  file_npm_package_get: "查 @dao3fun 组织的包请跑 apc npmlist（要出网，本包不代跑）。",
+  file_npm_package_path: "本包不改 IDE 设置。",
+  file_buildNUpload: "构建+上传要出网。请自己跑：npm run build && apc upload",
+  file_upLoad: "上传脚本要出网。请自己跑 apc upload。",
+  file_createProject: "脚手架由官方 CLI 做：apc create <项目名>。本包不复制它的模板，避免两份模板各自漂移。",
+  map_showMap: "打开创作端要官方插件在跑（透传模式）；否则用 apc preview。",
+  map_playData: "游玩数据要出网。请挂官方 @box3lab/statistics-mcp。",
+  map_resource: "同步资源要出网。请自己跑 apc resource。",
+  chatjpt_onlyKnowledgeBase: "知识库检索在官方插件里（要登录）。本包的 api_search / api_class 直接查工程自带的 d.ts，离线可用。",
+  component_showComponentStats: "组件统计要官方插件在跑（透传模式）。",
 };
 
 export function toolDefs() {
-  const out = [];
-  for (const [name, t] of Object.entries(TOOLS)) {
-    const props = {};
-    for (const n of t.needs) props[n] = { type: "string", description: n };
-    out.push({ name, description: t.desc, inputSchema: { type: "object", properties: props, required: t.needs } });
+  const local = Object.entries(TOOLS).map(([name, t]) => ({
+    name,
+    description: t.desc,
+    inputSchema: {
+      type: "object",
+      properties: Object.fromEntries(Object.entries(t.props).map(([k, v]) => [k, { type: v.type, description: v.desc }])),
+      required: t.needs,
+    },
+  }));
+  const refused = Object.entries(REFUSED).map(([name, why]) => ({
+    name,
+    description: `[本包不执行] ${why}`,
+    inputSchema: { type: "object", properties: {} },
+  }));
+  return [...local, ...refused];
+}
+
+export async function callLocal(name, args, ctx) {
+  const t = TOOLS[name];
+  if (!t) {
+    if (REFUSED[name]) return { content: [{ type: "text", text: `不支持：${REFUSED[name]}` }], isError: true };
+    return { content: [{ type: "text", text: `未知工具 ${name}` }], isError: true };
   }
-  for (const [name, why] of Object.entries(UNSUPPORTED)) {
-    out.push({ name, description: `【本地不支持】${why}`, inputSchema: { type: "object", properties: {} } });
+  const missing = t.needs.filter((k) => args[k] === undefined || args[k] === "");
+  if (missing.length) return { content: [{ type: "text", text: `缺少参数：${missing.join(", ")}` }], isError: true };
+  try {
+    const r = await t.run(ctx, args);
+    const text = typeof r === "string" ? r : (r && r.text) || "";
+    return { content: [{ type: "text", text }], isError: !!(r && r.isError) };
+  } catch (e) {
+    return { content: [{ type: "text", text: `失败：${(e && e.message) || e}` }], isError: true };
   }
-  return out;
 }

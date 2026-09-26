@@ -1,103 +1,109 @@
 #!/usr/bin/env node
 /**
- * server.mjs — ArenaPro 兼容的 MCP 服务（独立进程）。
+ * server.mjs — arenapro-kit 的 MCP 端点：**官方插件的客户端 + 本地工程层**。
  *
- * 默认端口 **25315**、路径 `/ap-mcp`，和官方 ArenaPro 插件的 MCP 一致，
- * 所以已经按官方文档配好 `.vscode/mcp.json` 的客户端**一个字都不用改**就能接上：
+ * 默认端口 **25316**，故意让开官方 ArenaPro 插件的 25315。
+ * 本包不冒充插件：能连上就把它的 24 个工具原样透传，连不上就明说。
  *
- *   { "servers": { "ArenaPro-MCP": { "type": "sse", "url": "http://localhost:25315/ap-mcp" } } }
+ *   node mcp/server.mjs [--port 25316] [--project <ArenaPro 工程目录>]
+ *                       [--plugin http://127.0.0.1:25315/ap-mcp] [--no-plugin]
  *
- * 它自己不存任何东西，全部转发给编辑器（默认 http://127.0.0.1:5180）。
- * 零第三方依赖：MCP 的 SSE 传输就是 text/event-stream + JSON-RPC 2.0。
+ * IDE 侧（官方插件已在跑时，两个 server 并存；没在跑时只挂这一个也行）：
+ *   { "servers": { "arenapro-kit": { "type": "sse", "url": "http://localhost:25316/ap-mcp" } } }
  *
- *   node mcp/server.mjs [--port 25315] [--editor http://127.0.0.1:5180] [--host 127.0.0.1]
- *
- * 端口被占时**明确报错并说明怎么办**，不会静默换端口——
- * IDE 里配的是 25315，静默挪到别的端口等于让客户端连一个不存在的地方。
+ * 路由规则：插件提供的名字优先——它能让 AI 真上传脚本，我这边的"不支持"就不该挡在前面。
  */
 import http from "node:http";
 import crypto from "node:crypto";
-import { TOOLS, UNSUPPORTED, toolDefs } from "./tools.mjs";
+import { TOOLS, REFUSED, toolDefs, callLocal } from "./tools.mjs";
+import { SseMcpClient } from "./bridge.mjs";
 
 const argv = process.argv.slice(2);
-const flag = (k, d) => { const i = argv.indexOf("--" + k); return i >= 0 && argv[i + 1] ? argv[i + 1] : d; };
-const PORT = Number(flag("port", process.env.PORT || 25315));
+const flag = (k, d) => { const i = argv.indexOf("--" + k); return i >= 0 && argv[i + 1] && !argv[i + 1].startsWith("--") ? argv[i + 1] : d; };
+const has = (k) => argv.includes("--" + k);
+
+const PORT = Number(flag("port", process.env.PORT || 25316));
 const HOST = flag("host", process.env.HOST || "127.0.0.1");
-const EDITOR = String(flag("editor", process.env.DAO3_BASE || "http://127.0.0.1:5180")).replace(/\/+$/, "");
-const VERSION = "1.0.0";
+const PROJECT = flag("project", process.env.ARENA_PROJECT || process.cwd());
+const PLUGIN_URL = has("no-plugin") ? null : String(flag("plugin", process.env.ARENA_PLUGIN || "http://127.0.0.1:25315/ap-mcp"));
+const VERSION = "0.1.0";
 const PROTOCOL_FALLBACK = "2024-11-05";
 
-/* ------------------------------ 对编辑器的 HTTP 客户端 ------------------------------ */
-async function getJson(p) {
-  const r = await fetch(EDITOR + p);
-  if (!r.ok) throw new Error(`编辑器 ${p} → HTTP ${r.status}`);
-  return await r.json();
-}
-async function readWorld(id) {
-  try {
-    const r = await fetch(`${EDITOR}/api/world/${encodeURIComponent(id)}`);
-    if (!r.ok) return null;
-    return await r.json();
-  } catch { return null; }
-}
-async function writeWorld(id, payload) {
-  try {
-    const r = await fetch(`${EDITOR}/api/world/${encodeURIComponent(id)}`, {
-      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
-    });
-    if (!r.ok) return false;
-    return true;
-  } catch { return false; }
-}
-async function postAsset(id, rel, content) {
-  try {
-    const r = await fetch(`${EDITOR}/api/world/${encodeURIComponent(id)}/asset?path=${encodeURIComponent(rel)}`, {
-      method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: content,
-    });
-    const j = await r.json().catch(() => ({}));
-    return r.ok ? { ok: true, ...j } : { ok: false, error: j.error || `HTTP ${r.status}` };
-  } catch (e) { return { ok: false, error: String(e.message || e) }; }
+if (PLUGIN_URL && !/:(25315)\b/.test(PLUGIN_URL) && PORT === 25315) {
+  console.log("提示：你把本服务也配在 25315——那正是官方插件的端口，两边会互抢。");
 }
 
-const ctx = { editor: EDITOR, version: VERSION, getJson, readWorld, writeWorld, postAsset };
+/* ------------------------------- 插件桥 ------------------------------- */
 
-/* ------------------------------ SSE 会话与 JSON-RPC ------------------------------ */
-const sessions = new Map();   // sid -> res
+const ctx = { projectRoot: PROJECT };
+let bridge = null;                 // SseMcpClient | null
+let pluginTools = [];              // [{name, description, inputSchema}]
+let pluginError = null;
+let nextProbeAt = 0;
 
+async function refreshPlugin(force) {
+  if (!PLUGIN_URL) return;
+  if (!force && Date.now() < nextProbeAt) return;
+  nextProbeAt = Date.now() + 5000;                 // 5 秒内不反复探，避免调用风暴
+  try {
+    if (bridge) bridge.close();
+    bridge = new SseMcpClient(PLUGIN_URL, { timeoutMs: 4000 });
+    const d = await bridge.discover();
+    pluginTools = d.tools || [];
+    pluginError = null;
+    bridgeInfo = d.serverInfo || null;
+  } catch (e) {
+    if (bridge) bridge.close();
+    bridge = null;
+    pluginTools = [];
+    pluginError = String(e.message || e);
+  }
+}
+let bridgeInfo = null;
+
+const pluginNames = () => new Set(pluginTools.map((t) => t.name));
+
+/* ------------------------------ SSE 会话 ------------------------------ */
+
+const sessions = new Map();
 const writable = (res) => res && res.writableEnded !== true && res.destroyed !== true;
-
-function push(sid, payload) {
+const push = (sid, payload) => {
   const res = sessions.get(sid);
   if (!res || !writable(res)) return false;
   res.write(`data: ${JSON.stringify(payload)}\n\n`);
   return true;
-}
+};
 
-/**
- * endpoint 帧的 data 按 MCP 规格是**纯文本 URL**，不是 JSON。
- * 多包一层引号会让客户端拼出 `http://host"/ap-mcp/messages?sid=…"` 这种非法 URL，
- * 结果是任何真实 MCP 客户端都连不上——而自己写的测试客户端如果跟着错，本地全绿、外面全黑。
- */
-function sseRaw(res, event, data) {
-  res.write(`event: ${event}\ndata: ${data}\n\n`);
+/** endpoint 帧的 data 按 MCP 规格是**纯文本 URL**，不是 JSON。 */
+const sseRaw = (res, event, data) => res.write(`event: ${event}\ndata: ${data}\n\n`);
+
+function defs() {
+  const own = toolDefs();
+  const fromPlugin = pluginNames();
+  // 插件在线时：它提供的名字一律以它为准，本包的"不支持"条目不再出现，
+  // 本地工具里与它重名的也不覆盖它。
+  const keep = own.filter((d) => !fromPlugin.has(d.name) || TOOLS[d.name]);
+  return [...pluginTools.map((t) => ({ ...t, source: "arenapro-plugin" })), ...keep];
 }
 
 async function callTool(name, args) {
-  if (UNSUPPORTED[name]) return { content: [{ type: "text", text: `不支持：${UNSUPPORTED[name]}` }], isError: true };
-  const t = TOOLS[name];
-  if (!t) return { content: [{ type: "text", text: `未知工具 ${name}` }], isError: true };
-  const missing = t.needs.filter((k) => args[k] === undefined || args[k] === "");
-  if (missing.length) return { content: [{ type: "text", text: `缺少参数：${missing.join(", ")}` }], isError: true };
-  try {
-    const r = await t.run(ctx, args);
-    const text = typeof r === "string" ? r : (r && r.text) || "";
-    return { content: [{ type: "text", text }], isError: !!(r && r.isError) };
-  } catch (e) {
-    return { content: [{ type: "text", text: `工具执行失败：${(e && e.message) || e}` }], isError: true };
+  if (pluginNames().has(name) && bridge) {
+    try {
+      return await bridge.callTool(name, args);
+    } catch (e) {
+      await refreshPlugin(true);
+      return { content: [{ type: "text", text: `转发给官方插件失败：${e.message || e}` }], isError: true };
+    }
   }
+  if (TOOLS[name]) return callLocal(name, args, ctx);
+  if (REFUSED[name]) {
+    const why = pluginError ? `${REFUSED[name]}\n（另：官方插件没连上——${PLUGIN_URL}：${pluginError}）` : REFUSED[name];
+    return { content: [{ type: "text", text: `不支持：${why}` }], isError: true };
+  }
+  return { content: [{ type: "text", text: `未知工具 ${name}` }], isError: true };
 }
 
-function handleRpc(sid, msg) {
+async function handleRpc(sid, msg) {
   const send = (p) => push(sid, p);
   const id = msg.id;
   switch (msg.method) {
@@ -105,12 +111,14 @@ function handleRpc(sid, msg) {
       return send({ jsonrpc: "2.0", id, result: {
         protocolVersion: (msg.params && msg.params.protocolVersion) || PROTOCOL_FALLBACK,
         capabilities: { tools: {} },
-        serverInfo: { name: "dao3-editor-skill (ArenaPro-compatible)", version: VERSION },
+        serverInfo: { name: "arenapro-kit", version: VERSION },
       } });
     case "ping": return send({ jsonrpc: "2.0", id, result: {} });
-    case "tools/list": return send({ jsonrpc: "2.0", id, result: { tools: toolDefs() } });
+    case "tools/list":
+      await refreshPlugin(false);
+      return send({ jsonrpc: "2.0", id, result: { tools: defs() } });
     case "tools/call":
-      return callTool(msg.params.name, msg.params.arguments || {}).then((r) => send({ jsonrpc: "2.0", id, result: r }));
+      return send({ jsonrpc: "2.0", id, result: await callTool(msg.params.name, msg.params.arguments || {}) });
     default:
       if (id !== undefined) send({ jsonrpc: "2.0", id, error: { code: -32601, message: `Method not found: ${msg.method}` } });
   }
@@ -145,26 +153,34 @@ const server = http.createServer(async (req, res) => {
     req.on("end", () => {
       res.writeHead(202).end();
       let msg; try { msg = JSON.parse(body); } catch { return; }
-      if (Array.isArray(msg)) msg.forEach((m) => handleRpc(sid, m));
-      else handleRpc(sid, msg);
+      (Array.isArray(msg) ? msg : [msg]).forEach((m) => handleRpc(sid, m));
     });
     return;
   }
 
-  // 发现端点：不走 MCP 协议也能看到本机支持/不支持哪些工具。
-  // 排查"AI 说接上了但调不动"时这是第一站。
+  // 发现端点：不走 MCP 协议也能看清"哪些是透传、哪些本地能做、哪些明确不做"。
   if (u.pathname === "/api/mcp/tools" && req.method === "GET") {
+    await refreshPlugin(false);
     return json(res, 200, {
-      endpoint: "/ap-mcp", transport: "sse", port: PORT,
-      officialContract: "ArenaPro 插件 MCP（官方默认同为 http://localhost:25315/ap-mcp）",
-      editor: EDITOR, supported: Object.keys(TOOLS), unsupported: UNSUPPORTED,
+      endpoint: "/ap-mcp", transport: "sse", port: PORT, projectRoot: PROJECT,
+      plugin: PLUGIN_URL ? { url: PLUGIN_URL, online: !!bridge, error: pluginError, tools: pluginTools.map((t) => t.name) } : { enabled: false },
+      local: Object.keys(TOOLS),
+      refused: Object.fromEntries(Object.entries(REFUSED).filter(([n]) => !pluginNames().has(n))),
     });
   }
 
   if (u.pathname === "/health" && req.method === "GET") {
-    let editor = { reachable: false };
-    try { editor = { reachable: true, ...(await getJson("/api/whoami")) }; } catch (e) { editor = { reachable: false, error: String(e.message || e) }; }
-    return json(res, 200, { ok: editor.reachable, mcp: `http://${HOST}:${PORT}/ap-mcp`, editor, sessions: sessions.size });
+    await refreshPlugin(false);
+    const { findProject } = await import("./project.mjs");
+    return json(res, 200, {
+      ok: true,
+      mcp: `http://${HOST}:${PORT}/ap-mcp`,
+      plugin: PLUGIN_URL ? { url: PLUGIN_URL, online: !!bridge, serverInfo: bridgeInfo, tools: pluginTools.length, error: pluginError } : { enabled: false },
+      project: findProject(PROJECT) ? findProject(PROJECT) : { isProject: false, cwd: PROJECT },
+      local: Object.keys(TOOLS).length,
+      refused: Object.keys(REFUSED).length,
+      sessions: sessions.size,
+    });
   }
 
   json(res, 404, { error: "not found", endpoints: ["/ap-mcp (SSE)", "/ap-mcp/messages (POST)", "/api/mcp/tools", "/health"] });
@@ -172,20 +188,20 @@ const server = http.createServer(async (req, res) => {
 
 server.on("error", (e) => {
   if (e.code === "EADDRINUSE") {
-    console.error(`端口 ${PORT} 已被占用。`);
-    console.error(`如果那是官方 ArenaPro 插件的 MCP，两者会抢同一个端口——把本工具换到别的端口，`);
-    console.error(`并同步改 IDE 里的 URL：node mcp/server.mjs --port 25316`);
-    console.error(`查谁占着：lsof -nP -iTCP:${PORT} -sTCP:LISTEN`);
+    console.error(`端口 ${PORT} 已被占用。查谁占着：lsof -nP -iTCP:${PORT} -sTCP:LISTEN`);
+    if (PORT === 25315) console.error("注意 25315 是官方 ArenaPro 插件的端口，本包默认用 25316，不建议抢它。");
   } else console.error("启动失败：", e.message || e);
   process.exit(1);
 });
 
 server.listen(PORT, HOST, async () => {
-  console.log(`ArenaPro 兼容 MCP 已启动  http://${HOST}:${PORT}/ap-mcp`);
-  console.log(`转发到编辑器            ${EDITOR}`);
-  let who = null;
-  try { who = await getJson("/api/whoami"); } catch { /* 下面统一提示 */ }
-  if (who) console.log(`编辑器在线              ${who.app} ${who.version}`);
-  else console.log(`⚠ 连不上 ${EDITOR}。先起编辑器：cd <编辑器仓库> && node start.mjs --no-open --port=5180 --host=127.0.0.1`);
-  console.log(`工具                    ${Object.keys(TOOLS).length} 个可用 · ${Object.keys(UNSUPPORTED).length} 个明说不支持`);
+  await refreshPlugin(true);
+  console.log(`arenapro-kit MCP 已启动     http://${HOST}:${PORT}/ap-mcp`);
+  console.log(`工程目录                  ${PROJECT}`);
+  if (!PLUGIN_URL) console.log(`官方插件                  已用 --no-plugin 关掉探测`);
+  else if (bridge) console.log(`官方插件在线              ${PLUGIN_URL} · 透传 ${pluginTools.length} 个工具${bridgeInfo?.name ? ` · ${bridgeInfo.name}` : ""}`);
+  else console.log(`未检测到官方插件          ${PLUGIN_URL}（${pluginError}）\n                          官方工具会返回"不支持 + 该跑什么命令"，本地工程层照常可用`);
+  console.log(`本包工具                  本地 ${Object.keys(TOOLS).length} 个 · 明确不做 ${Object.keys(REFUSED).length} 个`);
 });
+
+process.on("SIGINT", () => { if (bridge) bridge.close(); process.exit(0); });

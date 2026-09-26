@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 把 dao3-editor Skill 装进某个工程的 .qoder/skills/。
+# 把 arenapro Skill 装进某个工程的 .qoder/skills/。
 #
 # 默认用**软链**：改这份仓库，所有装了它的工程立刻跟着变——
 # 这类"给 AI 的规范"最容易出现的就是各处副本各自漂移。
@@ -10,7 +10,7 @@
 #   ./install.sh --copy [目标]        # 复制而不是软链
 set -euo pipefail
 
-SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/skill/dao3-editor"
+SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/skill/arenapro"
 MODE="link"
 DEST=""
 for a in "$@"; do
@@ -24,7 +24,7 @@ done
 [ -n "$DEST" ] || DEST="$PWD"
 
 TARGET_DIR="$DEST/.qoder/skills"
-TARGET="$TARGET_DIR/dao3-editor"
+TARGET="$TARGET_DIR/arenapro"
 mkdir -p "$TARGET_DIR"
 
 if [ -L "$TARGET" ] && [ "$(readlink "$TARGET")" = "$SRC" ]; then
@@ -53,8 +53,8 @@ fi
 
 echo
 echo "下一步："
-echo "  1. 起编辑器：  node <编辑器仓库>/start.mjs --no-open --port=5180 --host=127.0.0.1"
-echo "  2. 起 MCP：    node $(cd "$(dirname "$0")" && pwd)/mcp/server.mjs"
-echo "  3. 重启会话或 /skills reload，然后 /dao3-editor"
+echo "  1.（可选）起 MCP 端点：  node $(cd "$(dirname "$0")" && pwd)/mcp/server.mjs --project <你的 ArenaPro 工程>"
+echo "     官方 ArenaPro 插件在跑就自动透传它的工具；不在跑也不影响本地工具。"
+echo "  2. 重启会话或 /skills reload，然后 /arenapro"
 echo
-echo "验证： node $(cd "$(dirname "$0")" && pwd)/skill/dao3-editor/scripts/dao3.mjs health"
+echo "验证： node $(cd "$(dirname "$0")" && pwd)/skill/arenapro/scripts/arenapro.mjs info --project <你的 ArenaPro 工程>"
