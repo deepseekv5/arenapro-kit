@@ -1,5 +1,11 @@
 # 更新日志
 
+## 1.1.1 — 2026-09-26
+
+- 修介绍页窄屏顶栏溢出：`nav` 换行后撑破固定 58px 的 `.bar`，链接画到了头部上方。
+  现在 bar 高度自适应、nav 单行可横向滚动，并按视口调整锚点滚动补偿。
+  在 1320px 与 565px 两档实测过（宽屏 hero 仍是两栏，两档都无横向滚动）。
+
 ## 1.1.0 — 2026-09-26
 
 - 开源发布：仓库 [deepseekv5/dao3-editor-skill](https://github.com/deepseekv5/dao3-editor-skill)。
